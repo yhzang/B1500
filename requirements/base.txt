@@ -1,0 +1,7 @@
+pyvisa
+numpy
+pandas
+ipykernel
+pyyaml
+tqdm
+rich

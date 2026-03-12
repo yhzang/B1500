@@ -1,0 +1,6 @@
+b1500:
+  resource: "GPIB0::17::INSTR"
+  timeout_ms: 10000
+  write_termination: "\r\n"
+  read_termination: "\r\n"
+  send_end: true
