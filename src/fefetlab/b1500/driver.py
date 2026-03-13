@@ -171,7 +171,7 @@ class B1500:
         return records
 
     # ---------------------------
-    # format
+    # format / adc helpers
     # ---------------------------
 
     def fmt(self, mode: int = 5) -> None:
@@ -183,6 +183,28 @@ class B1500:
 
         self._write(f"FMT {mode}", check_err=True, wait_opc=False)
 
+    def av(self, number: int = 10, mode: int = 1) -> None:
+        """Set ADC averaging: AV <number>,<mode>."""
+        if not isinstance(number, int):
+            raise TypeError(f"number must be int, got {type(number).__name__}")
+        if not isinstance(mode, int):
+            raise TypeError(f"mode must be int, got {type(mode).__name__}")
+        if number <= 0:
+            raise ValueError(f"number must be > 0, got {number}")
+        if mode < 0:
+            raise ValueError(f"mode must be >= 0, got {mode}")
+
+        self._write(f"AV {number},{mode}", check_err=True, wait_opc=False)
+
+    def fl(self, mode: int = 0) -> None:
+        """Set filter mode: FL <mode>."""
+        if not isinstance(mode, int):
+            raise TypeError(f"mode must be int, got {type(mode).__name__}")
+        if mode < 0:
+            raise ValueError(f"mode must be >= 0, got {mode}")
+
+        self._write(f"FL {mode}", check_err=True, wait_opc=False)
+
     # ---------------------------
     # channel control
     # ---------------------------
@@ -191,9 +213,17 @@ class B1500:
         """Connect channels."""
         self._write(f"CN {self._format_channels(channels)}", check_err=True, wait_opc=False)
 
-    def cl(self, channels: Iterable[int]) -> None:
-        """Clear channels."""
-        self._write(f"CL {self._format_channels(channels)}", check_err=True, wait_opc=False)
+    def cl(self, channels: Iterable[int] | None = None) -> None:
+        """
+        Clear channels.
+
+        If channels is None:
+            send bare 'CL' to clear all channels.
+        """
+        if channels is None:
+            self._write("CL", check_err=True, wait_opc=False)
+        else:
+            self._write(f"CL {self._format_channels(channels)}", check_err=True, wait_opc=False)
 
     def dz(self, channels: Iterable[int]) -> None:
         """Force zero output on channels."""
@@ -203,9 +233,42 @@ class B1500:
     # source / measure
     # ---------------------------
 
-    def dv(self, ch: int, voltage: float, compliance: float, vrange: int = 0) -> None:
-        """Force DC voltage with current compliance."""
+    def dv(self, ch: int, a: float | int, b: float, c: float | int = 0) -> None:
+        """
+        Force DC voltage with current compliance.
+
+        Backward-compatible supported call styles:
+
+        New / recommended:
+            dv(ch, vrange, voltage, compliance)
+
+        Legacy:
+            dv(ch, voltage, compliance, vrange)
+
+        Recommendation:
+            Use keyword arguments in new code, for example:
+                b.dv(4, 0, -0.2, 1e-3)
+            meaning:
+                ch=4, vrange=0, voltage=-0.2, compliance=1e-3
+        """
         ch = self._validate_channel(ch)
+
+        # New style: dv(ch, vrange, voltage, compliance)
+        if isinstance(a, int):
+            vrange = a
+            voltage = float(b)
+            compliance = float(c)
+        else:
+            # Legacy style: dv(ch, voltage, compliance, vrange)
+            voltage = float(a)
+            compliance = float(b)
+            vrange = int(c)
+            warnings.warn(
+                "dv(ch, voltage, compliance, vrange) 已过时；"
+                "请改用 dv(ch, vrange, voltage, compliance)",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         if not isinstance(vrange, int):
             raise TypeError(f"vrange must be int, got {type(vrange).__name__}")
@@ -218,10 +281,19 @@ class B1500:
             wait_opc=False,
         )
 
-    def ti(self, ch: int) -> float:
-        """Measure current and parse scalar response."""
+    def ti(self, ch: int, irange: int = 0) -> float:
+        """
+        Measure current and parse scalar response.
+
+        Recommended:
+            b.ti(ch, irange=0)
+        """
         ch = self._validate_channel(ch)
-        resp = self._query(f"TI {ch}", check_err=False)
+
+        if not isinstance(irange, int):
+            raise TypeError(f"irange must be int, got {type(irange).__name__}")
+
+        resp = self._query(f"TI {ch},{irange}", check_err=False)
 
         status = self._extract_status(resp)
         if status == "C":
