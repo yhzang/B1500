@@ -34,23 +34,18 @@ class B1500:
     # ---------------------------
 
     @staticmethod
-    def _is_no_error(err: str) -> bool:
-        """Return True when ERRX? indicates no instrument error."""
-        text = err.strip()
-        return text.startswith("+0") or text.startswith("0")
+    def _parse_errx_code(err: str) -> int:
+        """
+        Parse error code from ERRX? response.
 
-    @staticmethod
-    def _parse_errx_code(err: str) -> int | None:
-        """Parse the numeric code from an ERRX? response like +153,\"...\"."""
+        Examples:
+        '+0,"No Error."' -> 0
+        '0,"No Error."' -> 0
+        '+153,"No module for the specified channel."' -> 153
+        """
         text = err.strip()
-        if not text:
-            return None
-
-        head = text.split(",", 1)[0].strip()
-        try:
-            return int(head)
-        except ValueError:
-            return None
+        code_str = text.split(",", 1)[0].strip()
+        return int(code_str)
 
     def _write(self, cmd: str, *, check_err: bool = True, wait_opc: bool = False) -> None:
         """Send a write command with optional OPC wait and ERRX check."""
@@ -61,7 +56,8 @@ class B1500:
 
         if check_err:
             err = self.errx()
-            if not self._is_no_error(err):
+            code = self._parse_errx_code(err)
+            if code != 0:
                 raise B1500Error(f"Command failed: {cmd!r}, ERRX? -> {err}")
 
     def _query(self, cmd: str, *, check_err: bool = False) -> str:
@@ -70,7 +66,8 @@ class B1500:
 
         if check_err:
             err = self.errx()
-            if not self._is_no_error(err):
+            code = self._parse_errx_code(err)
+            if code != 0:
                 raise B1500Error(f"Query failed: {cmd!r}, response={resp!r}, ERRX? -> {err}")
 
         return resp
@@ -162,18 +159,14 @@ class B1500:
 
     def clear_err_queue(self, max_reads: int = 20) -> list[str]:
         """
-        Drain ERRX? until code == 0 or max_reads is reached.
-
-        Returns all ERRX? responses read, including the final no-error record if reached.
+        Drain ERRX? queue until code == 0 or max_reads reached.
         """
-        if max_reads <= 0:
-            raise ValueError(f"max_reads must be > 0, got {max_reads}")
-
-        records: list[str] = []
+        records = []
         for _ in range(max_reads):
             err = self.errx()
             records.append(err)
-            if self._parse_errx_code(err) == 0:
+            code = self._parse_errx_code(err)
+            if code == 0:
                 break
         return records
 
@@ -210,50 +203,25 @@ class B1500:
     # source / measure
     # ---------------------------
 
-    def dv(
-        self,
-        ch: int,
-        vrange: int,
-        voltage: float,
-        compliance: float | None = None,
-        comp_polarity: int | None = None,
-        irange: int | None = None,
-    ) -> None:
-        """Force DC voltage using DV chnum,vrange,voltage[,Icomp[,comp_polarity[,irange]]]."""
+    def dv(self, ch: int, voltage: float, compliance: float, vrange: int = 0) -> None:
+        """Force DC voltage with current compliance."""
         ch = self._validate_channel(ch)
+
         if not isinstance(vrange, int):
             raise TypeError(f"vrange must be int, got {type(vrange).__name__}")
-        if compliance is not None and compliance <= 0:
+        if compliance <= 0:
             raise ValueError(f"compliance must be > 0, got {compliance}")
-        if comp_polarity is not None and not isinstance(comp_polarity, int):
-            raise TypeError(
-                f"comp_polarity must be int when provided, got {type(comp_polarity).__name__}"
-            )
-        if irange is not None and not isinstance(irange, int):
-            raise TypeError(f"irange must be int when provided, got {type(irange).__name__}")
 
-        fields: list[str] = [str(ch), str(vrange), f"{voltage:.12g}"]
-        if compliance is not None:
-            fields.append(f"{compliance:.12g}")
-            if comp_polarity is not None:
-                fields.append(str(comp_polarity))
-                if irange is not None:
-                    fields.append(str(irange))
-            elif irange is not None:
-                raise ValueError("irange requires comp_polarity to be provided.")
-        elif comp_polarity is not None or irange is not None:
-            raise ValueError("comp_polarity and irange require compliance to be provided.")
+        self._write(
+            f"DV {ch},{vrange},{voltage:.12g},{compliance:.12g}",
+            check_err=True,
+            wait_opc=False,
+        )
 
-        self._write(f"DV {','.join(fields)}", check_err=True, wait_opc=False)
-
-    def ti(self, ch: int, irange: int = 0) -> float:
-        """Spot current measurement."""
+    def ti(self, ch: int) -> float:
+        """Measure current and parse scalar response."""
         ch = self._validate_channel(ch)
-
-        if not isinstance(irange, int):
-            raise TypeError(f"irange must be int, got {type(irange).__name__}")
-
-        resp = self._query(f"TI {ch},{irange}", check_err=False)
+        resp = self._query(f"TI {ch}", check_err=False)
 
         status = self._extract_status(resp)
         if status == "C":
