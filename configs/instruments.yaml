@@ -1,6 +1,10 @@
 b1500:
   resource: "GPIB0::17::INSTR"
-  timeout_ms: 10000
+  timeout_ms: 30000
   write_termination: "\r\n"
   read_termination: "\r\n"
   send_end: true
+
+notes:
+  - "当前项目实测可用的通信配置"
+  - "若更改 termination，必须重新做 *IDN? / ERRX? / TI 最小链路验证"

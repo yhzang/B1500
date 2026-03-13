@@ -1,5 +1,18 @@
-device: "p-FeFET"
-channels:
-  G: 2
-  D: 1
-  S: 3
+instrument_channels:
+  verified_available_smu_channels: [4, 5, 6, 7]
+
+current_device:
+  device_name: "p_type_fefet_current_probe"
+  mapping_status: "unconfirmed"
+  candidate_channels: [4, 5, 6, 7]
+
+  # 这里先不要硬写死 G/D/S，除非你已经通过三端 sanity 确认
+  provisional_map:
+    G: 4
+    D: 5
+    S: 6
+
+  notes:
+    - "4/5/6/7 已通过单通道 TI 空载验证"
+    - "两通道小偏压空载验证通过"
+    - "当前 provisional_map 仅用于第一轮 3-terminal sanity，不代表最终 mapping"

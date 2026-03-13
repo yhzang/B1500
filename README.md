@@ -20,7 +20,6 @@ Python ↔ VISA ↔ B1500
 
 ## channel
 
->
 > IDN: Agilent Technologies,B1500A,MY55231213,A.06.02.2023.0401
 > UNT?: B1525A,0;B1530A,0;B1530A,0;B1517A,0;B1517A,0;B1517A,0;B1511B,1;B1520A,0;0,0;0,0
 > LOP?: LOP00,00,00,00,00,00,00,00,00,00
@@ -66,3 +65,25 @@ Python ↔ VISA ↔ B1500
 > ERRX drained at end: ['+0,"No Error."']
 
 4567 SMU可用
+
+
+## 当前已确认约定（2026-03）
+
+- 当前 B1500 自动化项目已确认可用 SMU 候选通道为 4/5/6/7，不再默认使用 1/2/3。
+- 当前通信配置固定为：
+  - resource: GPIB0::17::INSTR
+  - write_termination: "\r\n"
+  - read_termination: "\r\n"
+  - send_end: true
+- 单通道最小 bring-up 流程：
+  1. *IDN?
+  2. ERRX?
+  3. CN ch
+  4. DV ch,0,0,1E-3
+  5. TI ch,0
+  6. DZ ch
+  7. CL ch
+- TI 当前统一显式使用 `TI ch,0`。
+- notebook 调试时，修改结构后必须 Restart Kernel 并 Run All，避免 NameError。
+- 当前 `channel_map.yaml` 中的 G/D/S 若标注为 provisional_map，仅代表第一轮实验假设，不代表已最终确认。
+- 所有实验必须同时保存 raw / parsed / qc，坏数据不参与主判断。
