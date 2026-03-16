@@ -2,17 +2,20 @@ instrument_channels:
   verified_available_smu_channels: [4, 5, 6, 7]
 
 current_device:
-  device_name: "p_type_fefet_current_probe"
-  mapping_status: "unconfirmed"
-  candidate_channels: [4, 5, 6, 7]
+  mapping_status: confirmed_for_current_setup
 
-  # 这里先不要硬写死 G/D/S，除非你已经通过三端 sanity 确认
-  provisional_map:
+  physical_channel_to_smu:
+    4: SMU1
+    5: SMU2
+    6: SMU3
+    7: SMU4
+
+  role_map:
     G: 4
     D: 5
     S: 6
+    SPARE: 7
 
   notes:
-    - "4/5/6/7 已通过单通道 TI 空载验证"
-    - "两通道小偏压空载验证通过"
-    - "当前 provisional_map 仅用于第一轮 3-terminal sanity，不代表最终 mapping"
+    - "SMU1=G, SMU2=D, SMU3=S, SMU4=spare"
+    - "当前接线下 CH4->G, CH5->D, CH6->S, CH7->额外通道"

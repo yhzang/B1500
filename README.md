@@ -1,3 +1,16 @@
+# 系统框架
+
+* notebooks
+  用于：bring-up，调试，临时分析，探索，参数试验
+ *  scripts
+  固定流程一键运行，命令行执行，批量任务
+* protocols
+  把多个基础功能拼成一个完整实验。
+* src/fefetlab/measurements/
+  可复用的功能层，api层
+
+
+
 ## 终止符
 
 > A EOI-only raw: 'Agilent Technologies,B1500A,MY55231213,A.06.02.2023.0401\r\n' | strip: 'Agilent Technologies,B1500A,MY55231213,A.06.02.2023.0401'
@@ -20,66 +33,23 @@ Python ↔ VISA ↔ B1500
 
 ## channel
 
-> IDN: Agilent Technologies,B1500A,MY55231213,A.06.02.2023.0401
-> UNT?: B1525A,0;B1530A,0;B1530A,0;B1517A,0;B1517A,0;B1517A,0;B1511B,1;B1520A,0;0,0;0,0
-> LOP?: LOP00,00,00,00,00,00,00,00,00,00
->
-> === Probe channel 4 ===
-> ERRX drained at start: ['+0,"No Error."']
-> FMT ok
-> CN 4 ok
-> DV 4 ok
-> ERRX after DV: +0,"No Error."
-> DZ 4 ok
-> CL 4 ok
-> ERRX drained at end: ['+0,"No Error."']
->
-> === Probe channel 5 ===
-> ERRX drained at start: ['+0,"No Error."']
-> FMT ok
-> CN 5 ok
-> DV 5 ok
-> ERRX after DV: +0,"No Error."
-> DZ 5 ok
-> CL 5 ok
-> ERRX drained at end: ['+0,"No Error."']
->
-> === Probe channel 6 ===
-> ERRX drained at start: ['+0,"No Error."']
-> FMT ok
-> CN 6 ok
-> DV 6 ok
-> ERRX after DV: +0,"No Error."
-> DZ 6 ok
-> CL 6 ok
-> ERRX drained at end: ['+0,"No Error."']
->
-> === Probe channel 7 ===
-> ERRX drained at start: ['+0,"No Error."']
-> FMT ok
-> CN 7 ok
-> DV 7 ok
-> ERRX after DV: +0,"No Error."
-> DZ 7 ok
-> CL 7 ok
-> ERRX drained at end: ['+0,"No Error."']
-
 4567 SMU可用
-
 
 ## 当前已确认约定（2026-03）
 
 - 当前 B1500 自动化项目已确认可用 SMU 候选通道为 4/5/6/7，不再默认使用 1/2/3。
 - 当前通信配置固定为：
+
   - resource: GPIB0::17::INSTR
   - write_termination: "\r\n"
   - read_termination: "\r\n"
   - send_end: true
 - 单通道最小 bring-up 流程：
+
   1. *IDN?
   2. ERRX?
   3. CN ch
-  4. DV ch,0,0,1E-3
+  4. DV ch,vrange,voltage,compliance
   5. TI ch,0
   6. DZ ch
   7. CL ch
@@ -87,3 +57,27 @@ Python ↔ VISA ↔ B1500
 - notebook 调试时，修改结构后必须 Restart Kernel 并 Run All，避免 NameError。
 - 当前 `channel_map.yaml` 中的 G/D/S 若标注为 provisional_map，仅代表第一轮实验假设，不代表已最终确认。
 - 所有实验必须同时保存 raw / parsed / qc，坏数据不参与主判断。
+- ### 当前 Python driver 推荐调用方式：
+- b.dv(ch, vrange, voltage, compliance)
+- b.ti(ch, irange=0)
+
+### 当前已确认通道映射（本次接线）：
+
+- CH4 / SMU1
+- CH5 / SMU2
+- CH6 / SMU3
+- CH7 / SMU4
+
+## Driver 调用约定
+
+当前项目的 B1500 driver 推荐调用方式为：
+
+- `b.dv(ch, vrange, voltage, compliance)`
+- `b.ti(ch, irange=0)`
+- `b.cl()` 可用于关闭所有通道
+- `b.cl([ch1, ch2, ...])` 可用于关闭指定通道
+
+说明：
+
+- 历史 notebook 中若出现旧式 `dv(ch, voltage, compliance, vrange)`，应逐步迁移，不再推荐新增使用。
+- 新 notebook 建议优先使用显式、统一的调用顺序，避免参数混淆。
