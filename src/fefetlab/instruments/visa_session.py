@@ -77,4 +77,6 @@ class VisaSession:
         if self.inst is None:
             raise RuntimeError("VISA session is not opened.")
         resp = self.inst.query(cmd)
-        return resp.strip()
+
+
+
