@@ -20,7 +20,8 @@ from pathlib import Path
 if sys.platform == "win32":
     os.environ["PYTHONIOENCODING"] = "utf-8"
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
+        if hasattr(sys.stdout, 'reconfigure'):
+            sys.stdout.reconfigure(encoding="utf-8")
     except Exception:
         pass
 
