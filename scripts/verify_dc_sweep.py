@@ -39,6 +39,7 @@ def demo_simulated():
         DCSweepRunner,
         DCDataExporter,
     )
+    from fefetlab.measurements.dc.testing_utils import MockB1500
     import pandas as pd
 
     # 1. 配置
@@ -51,44 +52,6 @@ def demo_simulated():
 
     # 2. 模拟B1500
     print("\n[Step 2] 创建模拟仪器...")
-
-    class MockB1500:
-        def __init__(self):
-            self.voltages = {}
-
-        def fmt(self, m):
-            pass
-
-        def av(self, c, m):
-            pass
-
-        def fl(self, m):
-            pass
-
-        def cn(self, chs):
-            pass
-
-        def dv(self, ch, vr, v, ic):
-            self.voltages[ch] = v
-
-        def ti(self, ch, ir=0):
-            v = self.voltages.get(ch, 0)
-            if ch == 4:
-                return v * 1e-8
-            elif ch == 5:
-                return (v ** 2) * 1e-5 if v < 0 else 1e-6
-            return 0.0
-
-        def errx(self):
-            return "0"
-
-        def dz(self, chs):
-            for ch in chs:
-                self.voltages[ch] = 0.0
-
-        def cl(self, chs):
-            pass
-
     b1500 = MockB1500()
     print("✓ Mock B1500 created")
 
