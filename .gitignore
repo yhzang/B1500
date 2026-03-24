@@ -1,5 +1,92 @@
-.venv/
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# IDEs
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# 测试数据和运行结果（重要！）
+runs/
+outputs/
+results/
+data/raw/
+data/processed/
+*.csv
+*.dat
+*.hdf5
+*.h5
+*.pkl
+*.pickle
+export_ascii_*.txt
+
+# 日志文件
+*.log
+logs/
+*.out
+*.err
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+*.bak
+
+# 配置文件（可能包含敏感信息）
+**/instruments_local.yaml
+**/config_local.yaml
+.env
+.env.local
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# 文档构建
+docs/_build/
+site/
+
+# 测试覆盖率
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+
+# MyPy / Pyright
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyright/
