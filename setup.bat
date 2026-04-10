@@ -40,8 +40,12 @@ echo    ✅ 虚拟环境已激活
 REM 升级pip
 echo.
 echo 🔧 升级pip...
-python -m pip install --upgrade pip setuptools wheel -q
-echo    ✅ pip已升级
+python -m pip install --upgrade pip setuptools wheel
+if errorlevel 1 (
+    echo    ⚠️  pip升级失败，但继续安装依赖...
+) else (
+    echo    ✅ pip已升级
+)
 
 REM 安装依赖
 echo.
