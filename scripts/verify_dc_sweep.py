@@ -14,22 +14,29 @@ Usage:
 import sys
 import os
 import argparse
+import yaml
+import shutil
 from pathlib import Path
+import pandas as pd
 
 # Set UTF-8 encoding for Windows console
 if sys.platform == "win32":
     os.environ["PYTHONIOENCODING"] = "utf-8"
     try:
-        if hasattr(sys.stdout, 'reconfigure'):
-            sys.stdout.reconfigure(encoding="utf-8")
+        if hasattr(sys.stdout, 'reconfigure'):  # type: ignore
+            sys.stdout.reconfigure(encoding="utf-8")  # type: ignore
     except Exception:
         pass
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+# Configure pandas display options globally
+pd.set_option("display.max_columns", None)
+pd.set_option("display.width", 120)
 
-def demo_simulated():
+
+def demo_simulated() -> bool:
     """演示1: 无硬件模拟验证。"""
     print("\n" + "=" * 70)
     print("演示1: DC Sweep API - 模拟验证 (No Hardware)")
@@ -41,7 +48,7 @@ def demo_simulated():
         DCDataExporter,
     )
     from fefetlab.measurements.dc.testing_utils import MockB1500
-    import pandas as pd
+    from fefetlab.instruments.b1500 import B1500
 
     # 1. 配置
     print("\n[Step 1] 创建配置...")
@@ -53,7 +60,7 @@ def demo_simulated():
 
     # 2. 模拟B1500
     print("\n[Step 2] 创建模拟仪器...")
-    b1500 = MockB1500()
+    b1500: B1500 = MockB1500()  # type: ignore
     print("✓ Mock B1500 created")
 
     # 3. 扫描
@@ -76,8 +83,6 @@ def demo_simulated():
     # 5. 查看数据
     print("\n[Step 5] 测量结果预览:")
     print("-" * 70)
-    pd.set_option("display.max_columns", None)
-    pd.set_option("display.width", 120)
     print(df[["vg_set", "vd_set", "id_A", "ig_A", "status"]].to_string(index=False))
     print("-" * 70)
 
@@ -90,8 +95,6 @@ def demo_simulated():
 
     # 7. 清理
     print("\n[Step 7] 清理测试数据...")
-    import shutil
-
     shutil.rmtree(run_dir)
     print("✓ Test directory cleaned")
 
@@ -103,14 +106,15 @@ def demo_simulated():
     print("  2. 查看示例: notebooks/10_dc_api_idvg_example.ipynb 或 11_dc_api_idvd_example.ipynb")
     print("  3. 查看文档: src/fefetlab/measurements/dc/README.md")
 
+    return True
 
-def demo_real_hardware():
+
+def demo_real_hardware() -> bool:
     """演示2: 连接真实仪器验证。"""
     print("\n" + "=" * 70)
     print("演示2: DC Sweep API - 真实硬件验证")
     print("=" * 70)
 
-    import yaml
     from fefetlab.instruments.visa_session import VisaConfig, VisaSession
     from fefetlab.measurements.dc import DCSweepAPI
 
@@ -209,11 +213,7 @@ Examples:
 
     args = parser.parse_args()
 
-    if args.real:
-        success = demo_real_hardware()
-    else:
-        demo_simulated()
-        success = True
+    success = demo_real_hardware() if args.real else demo_simulated()
 
     print("\n")
     return 0 if success else 1
