@@ -1,5 +1,42 @@
 # B1500自动化测试系统 - 项目开发指南
 
+## 🚀 首次安装（新电脑必读）
+
+> **一键初始化虚拟环境和所有依赖**
+
+```bash
+# Unix/Linux/Mac/Git Bash
+bash setup.sh
+
+# Windows (PowerShell / CMD)
+setup.bat
+```
+
+脚本会自动：
+1. ✅ 检查Python版本 (需要 ≥ 3.10)
+2. ✅ 创建虚拟环境 `.venv`
+3. ✅ 安装所有依赖包 (PyVISA, NumPy, Pandas等)
+4. ✅ 安装项目包
+5. ✅ 验证安装完成
+
+**手动初始化**（如果脚本失败）：
+```bash
+# 1. 创建虚拟环境
+python -m venv .venv
+
+# 2. 激活虚拟环境
+# Windows:
+.venv\Scripts\activate
+# Linux/Mac:
+source .venv/bin/activate
+
+# 3. 安装依赖
+pip install -r requirements/dev.txt
+
+# 4. 安装项目包
+pip install -e .
+```
+
 > ⚡ **快速验证**: 想验证DC功能是否正常?
 > - **3分钟快速验证**: `PYTHONIOENCODING=utf-8 python scripts/verify_dc_sweep.py`
 > - **详细验证说明**: 查看 [TESTING.md](TESTING.md)
@@ -248,7 +285,7 @@ with VisaSession(visa_cfg) as session:
 
 ---
 
-## 快速开始
+## 📖 快速开始
 
 ### 验证DC功能
 
