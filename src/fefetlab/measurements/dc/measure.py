@@ -79,6 +79,10 @@ class DCMeasurePoint:
         )
 
         try:
+            # Ensure channels are connected for every single-point lifecycle.
+            channels = [self.ch_g, self.ch_d, self.ch_s]
+            self.b1500.cn(channels)
+
             # Apply voltages
             cfg_g = self.config.channels['G']
             cfg_d = self.config.channels['D']

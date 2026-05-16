@@ -37,9 +37,9 @@ pip install -r requirements/dev.txt
 pip install -e .
 ```
 
-> ⚡ **快速验证**: 想验证DC功能是否正常?
-> - **3分钟快速验证**: `PYTHONIOENCODING=utf-8 python scripts/verify_dc_sweep.py`
-> - **详细验证说明**: 查看 [TESTING.md](TESTING.md)
+> ⚡ **验证口径说明**
+> - 仓库当前以本地 Mock / 模拟验证为主，具体命令与边界见 [TESTING.md](TESTING.md)
+> - 真实硬件验证需在连接 B1500 的另一台电脑上执行；当前文档不再把仓库状态表述为“全部通过”或“READY”
 
 ## 整体项目架构
 
@@ -64,20 +64,22 @@ B1500/
 │   ├── 10_dc_api_idvg_example.ipynb               # [新API] Id-Vg扫描示例
 │   ├── 11_dc_api_idvd_example.ipynb               # [新API] Id-Vd扫描示例
 │   │
-│   ├─ WGFMU (12-14: Pulse Measurements)
-│   ├── 12_wgfmu_smoke.ipynb                       # WGFMU冒烟测试
-│   ├── 13_wgfmu_step_pulse_observe.ipynb          # WGFMU阶跃脉冲观测
-│   ├── 14_wgfmu_sampling_smoke.ipynb              # WGFMU取样冒烟测试
+│   ├─ WGFMU notebook原型 (12-14: Pulse Bring-up)
+│   ├── 12_wgfmu_smoke.ipynb                       # WGFMU smoke notebook（当前最直接原型入口）
+│   ├── 13_wgfmu_step_pulse_observe.ipynb          # WGFMU阶跃脉冲观测原型
+│   ├── 14_wgfmu_sampling_smoke.ipynb              # WGFMU取样冒烟原型
 │   │
 │   └─ 工具 (15+: Utilities)
 │       └── 15_channel_probe_test.ipynb            # 通道探测工具
 │
-├── scripts/                      # 可执行脚本 - 一键运行固定流程
-│   ├── verify_dc_sweep.py                     # DC功能验证脚本
-│   └── batch_sweep.py                         # 批量扫描脚本
+├── scripts/                      # 可执行脚本
+│   └── verify_dc_sweep.py                     # DC验证入口（支持本地Mock / --real）
 │
-├── protocols/                    # 测量协议 - 组合基础功能成完整实验
-│   └── device_characterization.py             # 器件完整表征协议
+├── tests/                        # 当前仓库中的本地pytest验证入口
+│   ├── test_dc_measurement.py                # MockB1500 + DC 调用链测试
+│   ├── test_verify_dc_sweep_script.py        # 验证脚本输出与关键配置可见性测试
+│   ├── tests_imports.py                      # 导入边界 / pyvisa 依赖边界检查
+│   └── check.ipynb                           # 临时检查notebook
 │
 ├── configs/                      # 配置文件
 │   ├── instruments.yaml                       # 仪器配置（资源地址、超时等）
@@ -96,41 +98,49 @@ B1500/
 │   ├── measurements/             # 层3：测量功能API（HIGH-LEVEL API）
 │   │   ├── __init__.py
 │   │   │
-│   │   ├── dc/                                # DC测量模块 ✅ 已完成
+│   │   ├── dc/                                # DC测量模块 ✅ 已落库
 │   │   │   ├── __init__.py
 │   │   │   ├── config.py                      # 配置数据类
 │   │   │   ├── measure.py                     # 单点测量逻辑
 │   │   │   ├── sweep.py                       # 扫描引擎
 │   │   │   ├── export.py                      # 数据导出和QC生成
 │   │   │   ├── dc_sweep_api.py                # 高级API (DCSweepAPI)
+│   │   │   ├── testing_utils.py               # MockB1500 等本地测试辅助
 │   │   │   ├── README.md                      # 模块文档
-│   │   │   └── tests/                         # 测试/验证
-│   │   │       ├── test_dc_sweep.py           # 单元测试
-│   │   │       └── demo_dc_sweep.py           # 交互式验证脚本
+│   │   │   └── tests/
+│   │   │       └── __init__.py
 │   │   │
-│   │   ├── ac/                                # AC测量模块 (待开发)
-│   │   │   └── [结构同dc/]
+│   │   ├── wgfmu/                             # WGFMU脚手架 ✅ 已落库（dummy backend + smoke workflow）
+│   │   │   ├── __init__.py
+│   │   │   ├── config.py
+│   │   │   ├── backend.py
+│   │   │   ├── export.py
+│   │   │   ├── smoke.py
+│   │   │   └── README.md
 │   │   │
-│   │   ├── wgfmu/                             # WGFMU脉冲测量模块 (待开发)
-│   │   │   └── [结构同dc/]
-│   │   │
-│   │   └── capacitance/                       # 电容测量模块 (待开发)
-│   │       └── [结构同dc/]
+│   │   └── 其他测量模块                        # 其余模块待后续正式落库
 │   │
 │   └── __init__.py
 │
-├── runs/                         # 测量结果输出目录（由脚本生成）
-│   └── YYYYMMDD_HHMMSS_*_sweep/
-│       ├── data.csv              # 原始数据
-│       ├── data.json             # JSON格式数据
-│       └── qc.csv                # QC质量控制报告
-│
-├── requirements.txt              # Python依赖
-├── README.md                      # 本文件 - 项目开发指南
-└── .gitignore
-
-
+├── requirements/                 # Python依赖清单
+│   ├── base.txt
+│   └── dev.txt
+├── pyproject.toml
+├── setup.sh / setup.bat
+├── ARCHITECTURE.md
+├── README.md                     # 本文件 - 项目开发指南
+├── TESTING.md
+└── COMPLETION_SUMMARY.md
 ```
+
+当前仓库未提供 `scripts/batch_sweep.py`、`protocols/device_characterization.py`，但现在已经提供正式的 `src/fefetlab/measurements/wgfmu/` 脚手架模块。
+
+WGFMU 当前处于“双轨状态”：
+- `notebooks/12_wgfmu_smoke.ipynb` 仍是原型来源与 bring-up 参考
+- `src/fefetlab/measurements/wgfmu/` 已落库最小正式脚手架（config / backend / smoke / export）
+- 但真实官方库绑定与真机联调仍未完成
+
+测量导出时会在仓库根目录生成 `runs/` 目录，但该目录不一定预先存在于版本库中。
 
 ## 📓 Notebook 编号规则
 
@@ -142,7 +152,7 @@ B1500/
 | **04-07** | DC基础 | 单通道、多通道、三端器件 | ✅ 稳定 |
 | **08-09** | DC参考 | 旧版扫描实现（供参考） | 📚 存档 |
 | **10-11** | DC API | 新API使用示例（推荐） | ✅ 新建 |
-| **12-14** | WGFMU | 脉冲测量实验 | ⏳ 开发中 |
+| **12-14** | WGFMU | notebook原型与bring-up记录（已开始向正式脚手架迁移） | 🧪 原型+脚手架 |
 | **15+** | 工具 | 辅助工具和测试 | - |
 
 **命名约定**:
@@ -162,7 +172,7 @@ B1500/
 
 ### 1️⃣ 每个测量功能的标准结构
 
-所有测量模块（dc, ac, wgfmu等）应遵循统一的架构模式：
+当前仓库里 `dc/` 与 `wgfmu/` 都已正式落库；其中 `wgfmu/` 目前还是脚手架阶段，后续 `ac`、电容等模块建议遵循统一的架构模式：
 
 | 文件 | 功能 | 职责 |
 |-----|------|------|
@@ -219,18 +229,23 @@ B1500/
 
 ### 4️⃣ 测试验证
 
-每个功能开发完成后：
+每个功能落库后，建议至少区分两类验证：
 
 ```bash
-# 1. 运行单元测试
-python -m pytest src/fefetlab/measurements/[module]/tests/test_*.py
+# 1. 本地 Mock / 模拟验证（仓库内，无需硬件）
+python scripts/verify_dc_sweep.py
+PYTHONPATH=src python -m pytest tests/test_dc_measurement.py -q
 
-# 2. 运行交互式演示
-python src/fefetlab/measurements/[module]/tests/demo_*.py
+# 2. notebook bring-up / 示例验证
+# 运行 notebooks/[N]_[module]_*.ipynb
 
-# 3. 在notebook中验证
-# 运行 notebooks/[N]_[module]_api_*.ipynb
+# 3. 真实硬件验证（需在连接 B1500 的另一台电脑执行）
+python scripts/verify_dc_sweep.py --real
 ```
+
+说明：
+- 仓库内文档只把第1类视为本地开发验证入口，不再预写“全部通过”的结论。
+- WGFMU 当前只有 notebook 原型，不适用 `measurements/wgfmu/` 模块级测试流程。
 
 ---
 
@@ -269,9 +284,10 @@ with VisaSession(visa_cfg) as session:
     df = result['df']  # pandas DataFrame
 ```
 
-**验证方式：**
-- 运行 `scripts/verify_dc_sweep.py`
-- 运行 notebooks/10 和 11
+**当前验证入口：**
+- 本地 Mock / 模拟：`scripts/verify_dc_sweep.py`、`PYTHONPATH=src python -m pytest tests/test_dc_measurement.py -q`
+- notebook 示例：`notebooks/10_dc_api_idvg_example.ipynb`、`notebooks/11_dc_api_idvd_example.ipynb`
+- 真实硬件验证：需在连接 B1500 的另一台电脑执行
 
 ---
 
@@ -290,14 +306,17 @@ with VisaSession(visa_cfg) as session:
 ### 验证DC功能
 
 ```bash
-# 方式1: 运行验证脚本（推荐新手）
+# 方式1: 本地 Mock / 模拟验证入口（无硬件）
 python scripts/verify_dc_sweep.py
 
-# 方式2: 在notebook中运行示例
-# 打开 notebooks/10_dc_api_idvg_example.ipynb 或 11_dc_api_idvd_example.ipynb
-# 修改通道号，连接仪器，Run All
+# 方式2: pytest 本地用例
+PYTHONPATH=src python -m pytest tests/test_dc_measurement.py -q
 
-# 方式3: 在Python代码中使用
+# 方式3: 在notebook中运行示例
+# 打开 notebooks/10_dc_api_idvg_example.ipynb 或 11_dc_api_idvd_example.ipynb
+# 若做真机验证，请在连接 B1500 的另一台电脑上修改通道号并 Run All
+
+# 方式4: 在Python代码中使用
 python -c "
 from fefetlab.measurements.dc import DCSweepAPI
 from fefetlab.instruments.visa_session import VisaConfig, VisaSession
@@ -377,8 +396,8 @@ A: `runs/YYYYMMDD_HHMMSS_[sweep_type]/`目录下，包含：
 - 底层驱动: `src/fefetlab/b1500/driver.py`
 - 仪器接口: `src/fefetlab/instruments/visa_session.py`
 - DC模块: `src/fefetlab/measurements/dc/README.md`
-- Demo notebooks: `notebooks/11_dc_api_idvg_example.ipynb`
+- Demo notebooks: `notebooks/10_dc_api_idvg_example.ipynb`, `notebooks/11_dc_api_idvd_example.ipynb`
 
 ---
 
-**最后更新**: 2026-03-24
+**最后更新**: 2026-04-16

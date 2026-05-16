@@ -90,3 +90,7 @@ htmlcov/
 .dmypy.json
 dmypy.json
 .pyright/
+
+# Per-session pre-edit backups (kept local, never committed)
+_agent/archive/
+.venv-wsl/

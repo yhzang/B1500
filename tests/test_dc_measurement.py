@@ -7,8 +7,6 @@ Run with: pytest tests/test_dc_measurement.py -v
 
 import pytest
 import pandas as pd
-from pathlib import Path
-import shutil
 
 from fefetlab.measurements.dc import (
     DCSweepConfig,
@@ -18,6 +16,48 @@ from fefetlab.measurements.dc import (
     DCDataExporter,
 )
 from fefetlab.measurements.dc.testing_utils import MockB1500
+
+
+EXPECTED_MEASUREMENT_COLUMNS = [
+    "vg_set",
+    "vd_set",
+    "vs_set",
+    "ig_A",
+    "id_A",
+    "is_A",
+    "err",
+    "status",
+    "timestamp",
+]
+
+
+class ConnectionSensitiveMockB1500(MockB1500):
+    """Mock that requires explicit CN before DV/TI and tracks lifecycle calls."""
+
+    def __init__(self):
+        super().__init__()
+        self.cn_call_count = 0
+
+    def cn(self, channels: list):
+        self.cn_call_count += 1
+        self.channels_connected.update(channels)
+
+    def cl(self, channels: list | None = None):
+        if channels is None:
+            self.channels_connected.clear()
+            return
+        for ch in channels:
+            self.channels_connected.discard(ch)
+
+    def dv(self, ch: int, vrange: int, voltage: float, compliance: float):
+        if ch not in self.channels_connected:
+            raise RuntimeError(f"channel {ch} is not connected")
+        super().dv(ch, vrange, voltage, compliance)
+
+    def ti(self, ch: int, irange: int = 0) -> float:
+        if ch not in self.channels_connected:
+            raise RuntimeError(f"channel {ch} is not connected")
+        return super().ti(ch, irange)
 
 
 @pytest.fixture
@@ -55,15 +95,46 @@ def test_config_creation(dc_config):
     assert dc_config.channels['D'].channel == 5
     assert dc_config.channels['S'].channel == 6
     assert dc_config.delay_s > 0
-    assert dc_config.fmt_mode in [1, 2, 12]
+    assert dc_config.fmt_mode == 5
+    assert dc_config.fl_mode == 1
+    assert dc_config.integration_time_mode is None
+    assert dc_config.integration_time_factor is None
+    assert dc_config.channels['G'].compliance == pytest.approx(1e-3)
+    assert dc_config.channels['G'].i_comp == pytest.approx(1e-3)
 
 
 def test_channel_config():
-    """Test channel configuration object."""
+    """Test channel configuration aliases stay compatible."""
     ch = DCChannelConfig(channel=4, vrange=20, compliance=1e-3)
     assert ch.channel == 4
     assert ch.vrange == 20
-    assert ch.compliance == 1e-3
+    assert ch.compliance == pytest.approx(1e-3)
+    assert ch.i_comp == pytest.approx(1e-3)
+
+    legacy = DCChannelConfig(channel=5, vrange=10, i_comp=2e-3)
+    assert legacy.compliance == pytest.approx(2e-3)
+    assert legacy.i_comp == pytest.approx(2e-3)
+
+
+def test_exporter_directory_aliases(tmp_path):
+    """Test exporter accepts both new and legacy directory argument names."""
+    exporter = DCDataExporter(export_dir=tmp_path)
+    assert exporter.export_dir == tmp_path
+    assert exporter.base_dir == tmp_path
+
+    legacy_exporter = DCDataExporter(base_dir=tmp_path)
+    assert legacy_exporter.export_dir == tmp_path
+    assert legacy_exporter.base_dir == tmp_path
+
+
+def test_config_supports_reserved_integration_time_fields():
+    """Test config already exposes future integration-time config slots."""
+    cfg = DCSweepConfig(
+        integration_time_mode="PLC",
+        integration_time_factor=2.0,
+    )
+    assert cfg.integration_time_mode == "PLC"
+    assert cfg.integration_time_factor == pytest.approx(2.0)
 
 
 # ============================================================================
@@ -155,10 +226,11 @@ def test_id_vg_sweep(sweep_runner):
     )
 
     assert len(df) == len(vg_points)
-    assert list(df.columns) == ['vg_set', 'vd_set', 'vs_set', 'id_A', 'ig_A', 'status', 'err']
+    assert list(df.columns) == EXPECTED_MEASUREMENT_COLUMNS
     assert all(df['status'] == 'ok')
     assert all(df['vd_set'] == 0.1)
     assert all(df['vs_set'] == 0.0)
+    assert df['timestamp'].notna().all()
 
 
 def test_id_vd_sweep(sweep_runner):
@@ -212,6 +284,21 @@ def test_sweep_with_progress_callback(sweep_runner):
 
     assert len(df) == len(vg_points)
     assert len(progress_calls) > 0  # Progress callback was called
+
+
+def test_sweep_reconnects_channels_for_each_point(dc_config):
+    """Each measurement point should re-connect channels before DV/TI commands."""
+    strict_mock = ConnectionSensitiveMockB1500()
+    runner = DCSweepRunner(strict_mock, dc_config)
+
+    df = runner.sweep_vg(
+        vg_points=[0.0, -0.2],
+        vd_fixed=0.1,
+        vs_fixed=0.0,
+    )
+
+    assert list(df["status"]) == ["ok", "ok"]
+    assert strict_mock.cn_call_count == 2
 
 
 # ============================================================================

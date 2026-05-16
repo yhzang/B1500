@@ -1,239 +1,157 @@
-# 2026-03-24 完成工作总结
+# 2026-03-24 阶段性完成情况（按 2026-04-16 仓库现状校正）
 
-## 🎯 本次任务
+## 本次任务
 
-1. **DC扫描API完整封装** ✅
-2. **项目架构规范化** ✅
-3. **文档体系完善** ✅
-4. **Notebook编号整理** ✅
-
----
-
-## 📦 完成的交付物
-
-### 1. DC扫描API模块 (src/fefetlab/measurements/dc/)
-
-#### 核心文件：
-- `config.py` - 配置数据类（DCSweepConfig, DCChannelConfig）
-- `measure.py` - 单点测量执行器（DCMeasurePoint, DCMeasureResult）
-- `sweep.py` - 多点扫描引擎（DCSweepRunner，支持3种扫描模式）
-- `export.py` - 数据导出和QC生成（DCDataExporter）
-- `dc_sweep_api.py` - 高级API（DCSweepAPI，user-friendly）
-- `README.md` - 完整的API文档
-
-#### 测试文件：
-- `tests/demo_dc_sweep.py` - 5个单元测试，全部通过 ✅
-- `scripts/verify_dc_sweep.py` - 模拟验证脚本
-
-#### 使用示例：
-- `notebooks/10_dc_api_idvg_example.ipynb` - Id-Vg扫描示例
-- `notebooks/11_dc_api_idvd_example.ipynb` - Id-Vd扫描示例
-
-#### 关键特性：
-- ✅ 从~100行手工代码简化到~20行API调用
-- ✅ 自动配置、错误处理、数据导出
-- ✅ 统一的DataFrame输出格式
-- ✅ 自动生成CSV/JSON/QC报告
-
-### 2. 项目文档系统
-
-#### 新增文档：
-- **ARCHITECTURE.md** - 分层架构设计指南
-  - 5层架构模型
-  - 模块设计模板
-  - 代码规范
-  - 设计检查清单
-
-- **TESTING.md** - 功能验证指南
-  - 3种验证方式（模拟/单元测试/硬件）
-  - 详细的预期输出说明
-  - 常见问题排查
-  - 测试检查清单
-
-- **README.md（主）** - 更新为统一的开发指南
-  - 清晰的项目架构图
-  - Notebook编号规则说明
-  - 快速开始指南
-  - 开发历史记录
-
-#### Notebook组织：
-```
-01-03: 基础层 (Termination, Session, Driver Tests) - 稳定 ✅
-04-09: DC基础 (单通道、多通道、三端器件、旧版扫描) - 稳定 ✅
-10-11: DC API (新的API示例) - 新建 ✅
-12-14: WGFMU (脉冲测量实验) - 开发中 ⏳
-15+: 工具 (辅助工具和测试) - 计划中
-```
-
-### 3. 文件结构重组
-
-#### 目录移动：
-```
-src/fefetlab/dc/  →  src/fefetlab/measurements/dc/
-```
-
-这样使得所有测量功能都在统一的`measurements`目录下，便于扩展。
-
-#### Notebook重新编号：
-- `08, 09` - 改为 `08_dc_idvg_oldversion`, `09_dc_idvd_oldversion` (存档参考)
-- `11, 12` - 改为 `10, 11` (DC API示例)
-- `10, 11, 12` - 改为 `12, 13, 14` (WGFMU实验)
+1. DC 扫描 API 主体落库
+2. 项目结构与 Notebook 编号初步整理
+3. README / TESTING / COMPLETION_SUMMARY 文档口径收口到真实状态
+4. 明确区分本地 Mock / 模拟验证与外部真机验证
 
 ---
 
-## 📚 关键设计决策
+## 当前可确认的交付物
 
-### 分层架构
-```
-High-Level API (DCSweepAPI)
-    ↓ 简洁易用
-Sweep Engine (DCSweepRunner)
-    ↓ 灵活可组合
-Single-Point Measure (DCMeasurePoint)
-    ↓ 完整生命周期
-Instrument Driver (B1500)
-    ↓ 硬件命令
-Communication Layer (VisaSession)
-```
+### 1. DC 扫描模块（`src/fefetlab/measurements/dc/`）
 
-### 模块化原则
-- ✅ 每层单一职责
-- ✅ 清晰的数据流向（向下调用）
-- ✅ 配置驱动，无硬编码
-- ✅ 支持多种扫描模式
-- ✅ 完整的文档和测试
+#### 核心文件
+- `config.py` - 配置数据类
+- `measure.py` - 单点测量执行器
+- `sweep.py` - 多点扫描引擎
+- `export.py` - 数据导出和 QC 生成
+- `dc_sweep_api.py` - 高级 API（`DCSweepAPI`）
+- `testing_utils.py` - MockB1500 等本地测试辅助
+- `README.md` - DC 模块文档
 
-### API设计理念
-- 用户只需3行代码完成一个完整扫描
-- 自动处理所有非功能细节（配置、错误、导出）
-- 返回易用的DataFrame和文件路径
-- 支持verbose模式调试
+#### 当前仓库里实际存在的验证相关文件
+- `scripts/verify_dc_sweep.py` - 当前 DC 验证入口（本地 Mock / `--real`）
+- `tests/test_verify_dc_sweep_script.py` - 验证脚本输出与关键配置可见性测试
+- `tests/tests_imports.py` - 包入口 / pyvisa 依赖边界检查
+- `tests/test_dc_measurement.py` - 当前 pytest 本地验证文件
+- `notebooks/10_dc_api_idvg_example.ipynb` - Id-Vg 示例
+- `notebooks/11_dc_api_idvd_example.ipynb` - Id-Vd 示例
+
+#### 可确认的模块特征
+- 已形成 config / measure / sweep / export / API 的分层结构
+- 已提供数据导出能力
+- 已提供 notebook 示例和本地验证入口
+- 当前不在本总结中宣称“全部验证通过”或“READY”
+
+### 2. 文档系统
+
+#### 当前在仓库中可见的主文档
+- `README.md` - 主开发指南
+- `TESTING.md` - 当前验证入口与边界说明
+- `ARCHITECTURE.md` - 架构说明
+- `src/fefetlab/measurements/dc/README.md` - DC 模块文档
+
+#### 本次文档校正重点
+- 删去对不存在文件/模块的正向描述
+- 将 WGFMU 收口为 notebook 原型状态
+- 将验证状态收口为“本地 Mock / 模拟为主，真机在另一台电脑执行”
+- 去掉“PASS / READY / 全部通过”这类超前表述
+
+### 3. WGFMU 当前状态
+
+当前仓库里的 WGFMU 现在处于“正式脚手架 + notebook 原型”并存状态：
+
+#### 已落库的正式脚手架
+- `src/fefetlab/measurements/wgfmu/config.py` - WGFMU 配置模型
+- `src/fefetlab/measurements/wgfmu/backend.py` - 抽象 backend + dummy backend
+- `src/fefetlab/measurements/wgfmu/export.py` - 导出路径与保存逻辑
+- `src/fefetlab/measurements/wgfmu/smoke.py` - smoke workflow runner
+- `src/fefetlab/measurements/wgfmu/README.md` - 模块说明
+- `tests/test_wgfmu_scaffold.py` - 本地 pytest 骨架验证
+
+#### 仍保留的 notebook 原型入口
+- `notebooks/12_wgfmu_smoke.ipynb` - 当前最直接的 smoke 原型来源
+- `notebooks/13_wgfmu_step_pulse_observe.ipynb` - 原型观察 notebook
+- `notebooks/14_wgfmu_sampling_smoke.ipynb` - 原型采样 notebook
+
+当前未交付：
+- 真实官方 Instrument Library 绑定
+- WGFMU 真机联调 / 验收结果
+
+### 4. 当前未落库、但文档曾超前描述的内容
+
+以下内容目前不在仓库中，不应写成已存在或已完成：
+
+- `scripts/batch_sweep.py`
+- `protocols/device_characterization.py`
+- WGFMU 真实官方库接入完成态
+- 仓库内的真机验证结果记录
+- 整体状态 “READY”
 
 ---
 
-## 🧪 验证状态
+## 验证状态（按当前仓库口径）
 
-| 项目 | 模拟验证 | 单元测试 | 文档 | 状态 |
-|------|---------|---------|------|------|
-| Config | ✅ | ✅ | ✅ | PASS |
-| Measure | ✅ | ✅ | ✅ | PASS |
-| Sweep | ✅ | ✅ | ✅ | PASS |
-| Export/QC | ✅ | ✅ | ✅ | PASS |
-| API | ✅ | ✅ | ✅ | PASS |
-| **整体** | **✅** | **✅** | **✅** | **READY** |
+| 项目 | 本地 Mock / 模拟 | pytest | 真机验证 | 当前口径 |
+|------|------------------|--------|----------|----------|
+| Config / Measure / Sweep / Export / API | 有入口 | 有入口 | 需外部电脑执行 | 阶段性可开发 |
+| `scripts/verify_dc_sweep.py` | 是 | - | 支持 `--real` | 不预写成功结论 |
+| `tests/test_dc_measurement.py` | - | 是 | - | 为当前实际 pytest 文件 |
+| WGFMU | notebook 原型 + 正式脚手架 | 有 `tests/test_wgfmu_scaffold.py` | 需后续补齐真实库与真机联调 | 非完整实现 |
+| 整体 | 以本地 Mock 为主 | 有基础本地用例 | 不在本仓库验收 | 非 READY |
 
-### 验证命令：
+### 当前可用命令
+
 ```bash
-# 快速验证（3分钟）
+# 本地 Mock / 模拟验证
 PYTHONIOENCODING=utf-8 python scripts/verify_dc_sweep.py
 
-# 单元测试
-PYTHONIOENCODING=utf-8 python src/fefetlab/measurements/dc/tests/demo_dc_sweep.py
+# pytest 本地用例
+PYTHONPATH=src python -m pytest tests/test_verify_dc_sweep_script.py tests/tests_imports.py tests/test_dc_measurement.py tests/test_wgfmu_scaffold.py -q
 
-# 查看文档
-- README.md - 开发指南
-- TESTING.md - 验证指南
-- ARCHITECTURE.md - 架构设计
-- src/fefetlab/measurements/dc/README.md - API文档
-```
-
----
-
-## 📈 代码质量指标
-
-| 指标 | 目标 | 实现 | 备注 |
-|------|------|------|------|
-| 代码行数 | ~100行 → ~20行 | ✅ 80%削减 | 单个测量 |
-| 错误处理 | 完善 | ✅ try/except + finally | 完整生命周期 |
-| 文档覆盖率 | 100% | ✅ | docstring + README |
-| 测试覆盖率 | >80% | ✅ 5个单元测试 | 全流程验证 |
-| 可复用性 | 高 | ✅ 3种扫描模式 | sweep_vg, sweep_vd, sweep_custom |
-
----
-
-## 🚀 后续开发建议
-
-### 立即可做（下一周）：
-1. 在真实硬件上验证DC API
-2. 开发AC扫描模块（参考DC的结构，3-4天）
-3. 开发WGFMU脉冲模块（参考DC的结构，3-4天）
-
-### 中期建议（后续）：
-1. 完善Protocols层（器件完整表征）
-2. 添加更多扫描模式（双向扫描、对数扫描）
-3. 内置数据可视化
-4. 性能优化（并行测量等）
-
-### 架构扩展（长期）：
-每个新的测量功能都应遵循DC模块的结构模式：
-```
-measurements/[type]/
-├── config.py              # 配置数据类
-├── measure.py             # 单点测量
-├── sweep.py               # 扫描引擎
-├── export.py              # 数据导出
-├── [type]_api.py          # 高级API
-├── README.md              # 文档
-└── tests/                 # 验证脚本
-```
-
----
-
-## 📖 使用快速参考
-
-### 基本用法
-```python
-from fefetlab.measurements.dc import DCSweepAPI
-from fefetlab.instruments.visa_session import VisaConfig, VisaSession
-
-with VisaSession(VisaConfig(...)) as session:
-    api = DCSweepAPI(session, ch_g=4, ch_d=5, ch_s=6)
-    result = api.run_idvg_sweep(
-        vg_points=[0.0, -0.2, -0.4],
-        vd_fixed=0.1,
-        vs_fixed=0.0
-    )
-    df = result['df']  # DataFrame
-    print(f"Data saved to: {result['run_dir']}")
-```
-
-### 验证功能
-```bash
-# 无硬件快速验证
-PYTHONIOENCODING=utf-8 python scripts/verify_dc_sweep.py
-
-# 详细测试
-PYTHONIOENCODING=utf-8 python src/fefetlab/measurements/dc/tests/demo_dc_sweep.py
-
-# 真实硬件验证
+# 真实硬件验证（需在连接 B1500 的另一台电脑执行）
 PYTHONIOENCODING=utf-8 python scripts/verify_dc_sweep.py --real
 ```
 
 ---
 
-## 📋 待办清单（后续）
+## Notebook 组织的当前口径
 
-- [ ] 真实硬件验证（需接线）
-- [ ] AC扫描模块开发
-- [ ] WGFMU脉冲模块开发
-- [ ] Protocol层实现
-- [ ] 性能基准测试
-- [ ] 数据可视化工具
-- [ ] 批量扫描脚本完成
+```text
+01-03: 基础层（通信 / Session / Driver）
+04-09: DC 基础与旧版参考
+10-11: DC API 示例
+12-14: WGFMU notebook 原型（尚未模块化）
+15+: 工具 / 辅助检查
+```
 
----
-
-## ✨ 本次改进亮点
-
-1. **系统化架构** - 分层设计，易于扩展
-2. **完整文档** - 从ARCHITECTURE到测试验证全覆盖
-3. **高可用性** - 模拟、单元、硬件三层验证
-4. **易用API** - 用户代码从100行降到20行
-5. **规范结构** - 后续功能都可按模板开发
+说明：
+- `10-11` 对应正式落库的 DC API 示例。
+- `12-14` 只应被描述为 WGFMU 原型 notebook，不应被描述为正式 WGFMU 模块。
 
 ---
 
-**项目状态**: ✅ DC API模块完成并验证
-**下一步**: 等待真实硬件验证，或开启AC/WGFMU模块开发
+## 当前代码 / 文档口径
 
-**更新时间**: 2026-03-24
+| 维度 | 当前情况 | 备注 |
+|------|----------|------|
+| 代码结构 | DC 模块已拆分为 config / measure / sweep / export / API | 属于已落库部分 |
+| 文档 | README / TESTING / ARCHITECTURE / DC README 均在仓库中 | 本次已按现状校正 |
+| 本地验证 | 保留脚本与 pytest 入口 | 以本地 Mock / 模拟为主 |
+| 真机验证 | 需在另一台电脑执行 | 本仓库不作为真机验收记录 |
+| WGFMU | 仅 notebook 原型 | 待正式模块化 |
+
+---
+
+## 后续建议
+
+### 近期建议
+1. 在连接 B1500 的另一台电脑上执行 `scripts/verify_dc_sweep.py --real`，把真机结果单独记录。
+2. 如果当前本地 Mock / pytest 与代码继续漂移，优先修入口而不是继续扩写“已完成”表述。
+3. 仅当 WGFMU 真正进入模块化开发后，再新增 `measurements/wgfmu/` 与对应文档。
+
+### 后续收口建议
+1. 只有在 `scripts/batch_sweep.py` 真正落库后，再把批量扫描写回 README。
+2. 只有在协议层代码真实存在后，再恢复 `protocols/` 相关描述。
+3. 未来若要再次宣称“通过”或“READY”，应附带明确的命令、环境和结果记录。
+
+---
+
+## 项目状态
+
+项目当前状态：DC 模块主体已在仓库中，文档已收口到真实状态；当前以本地 Mock / 模拟验证为主，真机验证需在用户另一台电脑执行，整体不标记为 READY。
+
+**更新时间**: 2026-04-16

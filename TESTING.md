@@ -1,207 +1,129 @@
 # DC Sweep API - 功能验证指南
 
-本文档说明如何验证DC扫描API的正常工作。
+本文档只说明当前仓库内可用的验证入口和验证边界。
 
-## 快速验证 (3种方式)
+- 仓库内当前以本地 Mock / 模拟验证为主。
+- 真实硬件验证需要在连接 B1500 的另一台电脑上执行。
+- 当前文档不再把仓库状态表述为“全部通过”或“READY”。
 
-### 方式1️⃣ : 模拟验证 (推荐-最快)
+## 快速验证（3种方式）
 
-**场景**: 快速检查API代码逻辑是否正确，无需硬件
+### 方式1️⃣：本地 Mock / 模拟验证
+
+适用场景：快速检查 DC API 的本地逻辑，不需要真实硬件。
 
 ```bash
 cd B1500/
 PYTHONIOENCODING=utf-8 python scripts/verify_dc_sweep.py
 ```
 
-**预期输出**:
-```
-[Step 1] 创建配置...
-✓ Config created:
-  G=CH4, D=CH5, S=CH6
+当前用途：
+- 走 MockB1500 路径，检查无硬件场景下的调用链。
+- 作为仓库内最直接的本地验证入口。
+- 重点覆盖配置、扫描、导出、API 封装等逻辑。
 
-[Step 2] 创建模拟仪器...
-✓ Mock B1500 created
-
-[Step 3] 执行 Id-Vg 扫描...
-✓ Sweep completed: 5 points
-
-[Step 4] 导出数据和QC...
-✓ Data exported to: runs\20260324_XXXXXX_verify_dc_api_demo
-
-[Step 5] 测量结果预览:
- vg_set  vd_set     id_A status
-    0.0     0.1 0.000001     ok
-   -0.2     0.1 0.000001     ok
-   -0.4     0.1 0.000001     ok
-
-[Step 6] QC报告:
- vg_set status issues
-    0.0     ok
-   -0.2     ok
-   -0.4     ok
-
-[Step 7] 清理测试数据...
-✓ Test directory cleaned
-
-======================================================================
-✅ 模拟验证成功！API工作正常
-======================================================================
-```
-
-**验证内容**:
-- ✅ Config创建和解析
-- ✅ 单点测量逻辑
-- ✅ 数据导出(CSV/JSON)
-- ✅ QC报告生成
-- ✅ 高级API结构
+说明：
+- 请以命令实际输出为准，本文档不再预写“必然成功”的整段输出。
+- 如果命令失败，通常表示导入路径、依赖或测试样例与当前代码仍有漂移，需要继续收口。
 
 ---
 
-### 方式2️⃣ : 单元测试套件
+### 方式2️⃣：pytest 本地用例
 
-**场景**: 详细的功能单元测试，有5个独立的测试
+适用场景：使用当前仓库里实际存在的 pytest 文件做本地验证。
 
 ```bash
 cd B1500/
-PYTHONIOENCODING=utf-8 python src/fefetlab/measurements/dc/tests/demo_dc_sweep.py
+PYTHONPATH=src python -m pytest tests/test_verify_dc_sweep_script.py tests/tests_imports.py tests/test_dc_measurement.py tests/test_wgfmu_scaffold.py -q
 ```
 
-**包含的测试**:
-1. **TEST 1**: Configuration Creation
-   - 验证配置对象创建和参数
+当前覆盖范围：
+- 验证脚本输出中的关键配置可见性（含 filter / integration 占位）
+- 包入口导入边界
+- pyvisa 缺失时的 Mock 路径导入
+- DC 配置对象与测量链路
+- WGFMU 脚手架导入、dummy smoke workflow、导出结果与列重命名
 
-2. **TEST 2**: Single Point Measurement
-   - 验证单个测量点的执行和结果正确性
-
-3. **TEST 3**: Sweep Execution
-   - 验证多点Id-Vg扫描逻辑
-
-4. **TEST 4**: Data Export and QC
-   - 验证CSV/JSON导出
-   - 验证QC报告生成
-
-5. **TEST 5**: High-Level API
-   - 验证DCSweepAPI的公共接口
-
-**预期输出**: 最后显示 `✅ ALL TESTS PASSED`
-
-**验证内容**:
-- ✅ 配置系统
-- ✅ 测量逻辑
-- ✅ 扫描引擎
-- ✅ 数据导出
-- ✅ API接口
+说明：
+- 当前 pytest 入口包括 `tests/test_verify_dc_sweep_script.py`、`tests/tests_imports.py`、`tests/test_dc_measurement.py` 和 `tests/test_wgfmu_scaffold.py`。
+- 仓库中并不存在 `src/fefetlab/measurements/dc/tests/demo_dc_sweep.py` 这一正式验证入口。
+- WGFMU 当前是“正式脚手架 + dummy backend 可测”，不是“真实官方库已接好”。
+- 本文档不再预写 `ALL TESTS PASSED` 一类固定结论。
 
 ---
 
-### 方式3️⃣ : 真实硬件验证 (需要仪器)
+### 方式3️⃣：真实硬件验证（需要仪器）
 
-**场景**: 连接实际的B1500仪器，执行完整的扫描
+适用场景：在连接 B1500 的电脑上做真实测量流程验证。
 
 ```bash
 cd B1500/
 PYTHONIOENCODING=utf-8 python scripts/verify_dc_sweep.py --real
 ```
 
-**前置条件**:
-- B1500仪器已连接并打开
-- `configs/instruments.yaml` 配置正确
-- `configs/channel_map.yaml` 通道映射正确
+前置条件：
+- B1500 仪器已连接并上电。
+- `configs/instruments.yaml` 配置正确。
+- `configs/channel_map.yaml` 通道映射正确。
+- 在具备 VISA / GPIB 环境的电脑上执行。
 
-**预期输出**:
-```
-[Step 1] 加载仪器配置...
-✓ Config loaded:
-  Resource: GPIB0::17::INSTR
-  Channels: G=4, D=5, S=6
-
-[Step 2] 连接仪器...
-✓ 连接成功!
-  IDN: Agilent Technologies,B1500A,...
-
-[Step 3] 执行小范围 Id-Vg 扫描...
-Progress: 3/3
-
-✓ 扫描完成！数据保存到: runs\20260324_XXXXXX_verify_dc_api_real
-
-测量结果:
- vg_set  vd_set     id_A status
-    0.0     0.1 {...}     ok
-   -0.2     0.1 {...}     ok
-   -0.4     0.1 {...}     ok
-
-✅ 真实硬件验证成功！
-```
-
-**验证内容**:
-- ✅ B1500通信正常
-- ✅ 通道配置正确
-- ✅ 完整扫描流程
-- ✅ 数据采集正确
+边界说明：
+- 当前仓库不做真实硬件验收记录。
+- 真机结果由用户另一台电脑执行并确认。
+- 因此，仓库文档只声明“提供真机验证入口”，不声明“真机已通过”。
 
 ---
 
 ## Jupyter Notebook 验证
 
-### Notebook 10: Id-Vg 扫描示例
+### Notebook 10 / 11：DC 示例
 
-打开 `notebooks/10_dc_api_idvg_example.ipynb`
+文件：
+- `notebooks/10_dc_api_idvg_example.ipynb`
+- `notebooks/11_dc_api_idvd_example.ipynb`
 
-**步骤**:
-1. 配置仪器连接参数（resource, channels）
-2. Run All 或按单元逐步运行
-3. 查看测量数据和绘图
-4. 验证运行输出中有 "数据已保存到: ..."
+用途：
+- 演示正式落库的 DC API 用法。
+- 适合作为 bring-up / 交互式检查入口。
 
-**验证点**:
-- ✅ Id-Vg特性曲线正确（|Id|随|Vg|增加）
-- ✅ Ig远小于Id（栅漏比>1000）
-- ✅ 数据文件已保存
+说明：
+- 若只是本地开发，可先看调用路径和参数，不必把 notebook 运行结果表述为正式验收。
+- 若要做真机验证，请在连接 B1500 的电脑上运行。
 
-### Notebook 11: Id-Vd 扫描示例
+### Notebook 12-14：WGFMU 原型 + 正式脚手架
 
-打开 `notebooks/11_dc_api_idvd_example.ipynb`
+文件：
+- `notebooks/12_wgfmu_smoke.ipynb`
+- `notebooks/13_wgfmu_step_pulse_observe.ipynb`
+- `notebooks/14_wgfmu_sampling_smoke.ipynb`
 
-**步骤**:
-1. 配置仪器和通道
-2. Run All
-3. 查看输出特性曲线
-
-**验证点**:
-- ✅ Id-Vd曲线形状合理（不同Vg曲线分离）
-- ✅ 数据导出成功
+当前口径：
+- `notebooks/12~14` 仍属于 WGFMU 原型 / bring-up 记录。
+- 其中 `12_wgfmu_smoke.ipynb` 是当前最直接的原型 smoke 入口。
+- 仓库里已经新增正式的 `src/fefetlab/measurements/wgfmu/` 脚手架模块，并有 `tests/test_wgfmu_scaffold.py` 做本地 pytest。
+- 但真实官方库绑定与真机联调尚未完成，因此不能把它描述成“真实 WGFMU 功能已全部就绪”。
 
 ---
 
 ## 验证检查清单
 
-### 代码层面 (✅ 已通过)
+### 当前仓库已具备的验证入口
 
-- [x] Config数据类定义正确
-- [x] DCMeasurePoint单点测量逻辑正确
-- [x] DCSweepRunner扫描引擎正确
-- [x] DCDataExporter数据导出正确
-- [x] DCSweepAPI高级接口完整
-- [x] 导入路径正确（measurements下的相对导入）
-- [x] 错误处理完善
-- [x] 文档完整
+- [x] `scripts/verify_dc_sweep.py`（本地 Mock / `--real` 双入口）
+- [x] `tests/test_verify_dc_sweep_script.py`（验证脚本输出与关键配置可见性）
+- [x] `tests/test_dc_measurement.py`（DC pytest 本地验证文件）
+- [x] `tests/test_wgfmu_scaffold.py`（WGFMU 脚手架 pytest）
+- [x] `notebooks/10_dc_api_idvg_example.ipynb`
+- [x] `notebooks/11_dc_api_idvd_example.ipynb`
+- [x] `notebooks/12_wgfmu_smoke.ipynb` 等 WGFMU 原型 notebook
 
-### 功能层面 (✅ 模拟验证已通过)
+### 当前不应再写成“已完成”的事项
 
-- [x] 配置创建和应用
-- [x] 单点测量执行
-- [x] 多点扫描
-- [x] 数据导出(CSV)
-- [x] JSON序列化
-- [x] QC报告生成
-- [ ] *真实硬件完整流程*(需硬件)
-
-### 集成层面 (✅ 已通过)
-
-- [x] 模块导入正确
-- [x] API调用链正确
-- [x] 数据流向正确
-- [x] 错误传递正确
+- [ ] 仓库内真机验证结果
+- [ ] “全部通过” / “READY”
+- [ ] WGFMU 真实官方库接入与真机联调完成态
+- [ ] `scripts/batch_sweep.py`
+- [ ] `protocols/device_characterization.py`
 
 ---
 
@@ -209,83 +131,62 @@ Progress: 3/3
 
 ### 运行脚本报 ModuleNotFoundError
 
-**问题**:
-```
+问题示例：
+```text
 ModuleNotFoundError: No module named 'fefetlab'
 ```
 
-**解决**:
-1. 确保在 `B1500/` 根目录运行脚本
-2. 或设置PYTHONPATH:
+解决：
+1. 确保在 `B1500/` 根目录运行。
+2. 或显式设置 `PYTHONPATH`：
    ```bash
-   export PYTHONPATH=B1500/src:$PYTHONPATH
+   export PYTHONPATH=src:$PYTHONPATH
    python scripts/verify_dc_sweep.py
    ```
 
 ### 运行脚本报 UnicodeEncodeError
 
-**问题** (Windows):
-```
+问题示例（Windows）：
+```text
 UnicodeEncodeError: 'gbk' codec can't encode character '\u2713'
 ```
 
-**解决**:
+解决：
 ```bash
 PYTHONIOENCODING=utf-8 python scripts/verify_dc_sweep.py
 ```
 
 ### 真实硬件验证失败
 
-**问题**: `仪器连接失败: ...`
-
-**检查项**:
-1. B1500是否开电源
-   ```bash
-   # 试试这个命令
-   python -c "from fefetlab.instruments.visa_session import VisaSession, VisaConfig; \
-   cfg = VisaConfig(resource='GPIB0::17::INSTR', timeout_ms=5000); \
-   session = VisaSession(cfg); \
-   session.open(); \
-   print(session.query('*IDN?')); \
-   session.close()"
-   ```
-
-2. VISA后端是否安装 (NI-VISA)
-
-3. GPIB地址是否正确
-   - 控制卡: 18
-   - 仪器: 17
-   - 正确资源字符串: `GPIB0::17::INSTR`
-
-4. 通道映射是否正确 (见 `configs/channel_map.yaml`)
+常见检查项：
+1. B1500 是否开机并连通。
+2. VISA / GPIB 环境是否安装完整。
+3. `configs/instruments.yaml` 中的资源字符串是否正确。
+4. `configs/channel_map.yaml` 中的通道映射是否正确。
+5. 是否在连接真实仪器的那台电脑上执行。
 
 ---
 
-## 测试结果记录
+## 当前状态记录
 
-### 2026-03-24
+### 2026-04-16
 
-| 测试项 | 模拟验证 | 单元测试 | 硬件验证 | 备注 |
-|--------|---------|---------|---------|------|
-| Config创建 | ✅ | ✅ | - | 成功 |
-| 单点测量 | ✅ | ✅ | - | 成功 |
-| 扫描执行 | ✅ | ✅ | - | 成功 |
-| 数据导出 | ✅ | ✅ | - | 成功 |
-| QC生成 | ✅ | ✅ | - | 成功 |
-| 高级API | ✅ | ✅ | - | 成功 |
-| **总体** | **✅ PASS** | **✅ PASS** | **待测** | API就绪 |
+| 类别 | 当前仓库口径 | 备注 |
+|------|--------------|------|
+| DC 本地验证 | 可做本地 Mock / 模拟验证 | 以实际命令结果为准 |
+| pytest | 存在实际用例文件 | 包括 `tests/test_verify_dc_sweep_script.py`、`tests/test_dc_measurement.py`、`tests/test_wgfmu_scaffold.py` |
+| 真机验证 | 需外部电脑执行 | 本仓库不记录验收结果 |
+| WGFMU | 正式脚手架 + notebook 原型 | 已落库 `measurements/wgfmu/`，但真实库未接 |
+| 整体状态 | 阶段性可开发 | 不标记 READY |
 
 ---
 
-## 进一步的测试
+## 进一步的测试建议
 
-如果需要更深入的测试，可以:
-
-1. **边界值测试**: 修改demo脚本，添加极端值测试
-2. **性能测试**: 测量大量数据点的扫描时间
-3. **错误恢复**: 测试错误场景下的恢复能力
-4. **数据准确性**: 与之前的notebook结果对比
+1. 在连接 B1500 的另一台电脑上执行 `scripts/verify_dc_sweep.py --real`，把真机结果与本仓库文档分开记录。
+2. 如果 WGFMU 要继续扩展，先在现有 `src/fefetlab/measurements/wgfmu/` 脚手架上增加真实 backend，而不是重新起一套并行结构。
+3. 只有当 `scripts/batch_sweep.py`、协议层代码真实落库后，再把它们写回 README / 完成总结。
 
 ---
 
-**更新时间**: 2026-03-24
+**更新时间**: 2026-04-16

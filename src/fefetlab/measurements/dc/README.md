@@ -163,18 +163,21 @@ result = dc_api.run_custom_sweep(
 ### 自定义配置
 
 ```python
-from fefetlab.dc import DCSweepConfig, DCChannelConfig
+from fefetlab.measurements.dc import DCSweepConfig, DCChannelConfig
 
 # 创建自定义配置
 custom_config = DCSweepConfig(
     channels={
-        'G': DCChannelConfig(channel=4, vrange=0, i_comp=1e-3),
-        'D': DCChannelConfig(channel=5, vrange=0, i_comp=5e-3),
-        'S': DCChannelConfig(channel=6, vrange=0, i_comp=5e-3),
+        'G': DCChannelConfig(channel=4, vrange=0, compliance=1e-3),
+        'D': DCChannelConfig(channel=5, vrange=0, compliance=5e-3),
+        'S': DCChannelConfig(channel=6, vrange=0, compliance=5e-3),
     },
-    delay_s=0.5,      # 增加延迟
+    delay_s=0.5,               # 额外等待稳定
     fmt_mode=5,
-    av_count=20,      # 增加平均次数
+    av_count=20,               # 增加平均次数
+    fl_mode=1,                 # 默认建议稳定优先（Filter ON）
+    integration_time_mode=None,    # 预留位：后续接入 driver 命令
+    integration_time_factor=None,  # 预留位：后续接入 driver 命令
 )
 
 # 使用自定义配置
@@ -186,7 +189,7 @@ dc_api = DCSweepAPI(session, ch_g=4, ch_d=5, ch_s=6, config=custom_config)
 如果需要更细粒度的控制：
 
 ```python
-from fefetlab.dc import DCSweepRunner, DCDataExporter
+from fefetlab.measurements.dc import DCSweepRunner, DCDataExporter
 
 # 使用sweep runner
 runner = DCSweepRunner(b1500, config)
@@ -199,13 +202,13 @@ export_result = exporter.export_sweep(df, "my_sweep")
 
 ## 示例Notebooks
 
-- `11_dc_api_idvg_example.ipynb`: Id-Vg扫描完整示例
-- `12_dc_api_idvd_example.ipynb`: Id-Vd扫描完整示例
+- `10_dc_api_idvg_example.ipynb`: Id-Vg扫描完整示例
+- `11_dc_api_idvd_example.ipynb`: Id-Vd扫描完整示例
 
 ## 架构
 
 ```
-fefetlab/dc/
+fefetlab/measurements/dc/
 ├── __init__.py         # 包导出
 ├── config.py           # 配置数据类
 ├── measure.py          # 单点测量
@@ -264,7 +267,9 @@ with VisaSession(visa_cfg) as session:
 
 ```python
 config = DCSweepConfig.from_notebooks_default(4, 5, 6)
-config.channels['D'].i_comp = 5e-3  # 修改漏极合规为5mA
+config.channels['D'].compliance = 5e-3  # 推荐公开命名
+# 兼容旧名：config.channels['D'].i_comp = 5e-3
+
 dc_api = DCSweepAPI(session, ch_g=4, ch_d=5, ch_s=6, config=config)
 ```
 

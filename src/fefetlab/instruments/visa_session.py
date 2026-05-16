@@ -1,9 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Any
+from typing import Any, Optional
 
-import pyvisa
+try:
+    import pyvisa
+except ModuleNotFoundError:  # pragma: no cover - exercised via mock/test path
+    pyvisa = None
+
+
+def _require_pyvisa() -> Any:
+    if pyvisa is None:
+        raise ModuleNotFoundError(
+            "pyvisa is required for real instrument sessions. "
+            "Install pyvisa before opening a VisaSession."
+        )
+    return pyvisa
 
 
 @dataclass
@@ -33,14 +45,16 @@ class VisaSession:
 
     def __init__(self, cfg: VisaConfig):
         self.cfg = cfg
-        self.rm: Optional[pyvisa.ResourceManager] = None
+        self.rm: Optional[Any] = None
         self.inst: Optional[Any] = None
 
     def open(self) -> "VisaSession":
+        visa = _require_pyvisa()
+
         if self.cfg.backend:
-            self.rm = pyvisa.ResourceManager(self.cfg.backend)
+            self.rm = visa.ResourceManager(self.cfg.backend)
         else:
-            self.rm = pyvisa.ResourceManager()
+            self.rm = visa.ResourceManager()
 
         self.inst = self.rm.open_resource(self.cfg.resource)
         self.inst.timeout = int(self.cfg.timeout_ms)
@@ -77,6 +91,4 @@ class VisaSession:
         if self.inst is None:
             raise RuntimeError("VISA session is not opened.")
         resp = self.inst.query(cmd)
-
-
-
+        return resp

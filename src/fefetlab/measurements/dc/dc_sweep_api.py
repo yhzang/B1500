@@ -51,7 +51,7 @@ class DCSweepAPI:
         self.b1500 = B1500(session)
         self.config = config or DCSweepConfig.from_notebooks_default(ch_g, ch_d, ch_s)
         self.runner = DCSweepRunner(self.b1500, self.config)
-        self.exporter = DCDataExporter(export_dir)
+        self.exporter = DCDataExporter(export_dir=export_dir)
 
     def run_idvg_sweep(
         self,

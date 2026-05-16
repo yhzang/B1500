@@ -36,6 +36,35 @@ pd.set_option("display.max_columns", None)
 pd.set_option("display.width", 120)
 
 
+def build_dc_config_display_lines(config) -> list[str]:
+    """Build human-readable config lines for manual verification output."""
+    channels_line = (
+        f"Channels: G=CH{config.channels['G'].channel}, "
+        f"D=CH{config.channels['D'].channel}, "
+        f"S=CH{config.channels['S'].channel}"
+    )
+    filter_state = "ON" if config.fl_mode else "OFF"
+
+    integration_mode = getattr(config, "integration_time_mode", None)
+    integration_factor = getattr(config, "integration_time_factor", None)
+    if integration_mode is None and integration_factor is None:
+        integration_line = "Integration time: unset (reserved config only)"
+    else:
+        integration_line = (
+            f"Integration time: mode={integration_mode}, "
+            f"factor={integration_factor}"
+        )
+
+    return [
+        channels_line,
+        f"Delay: {config.delay_s} s",
+        f"FMT: {config.fmt_mode}",
+        f"AV: count={config.av_count}, mode={config.av_mode}",
+        f"Filter: {filter_state} (fl_mode={config.fl_mode})",
+        integration_line,
+    ]
+
+
 def demo_simulated() -> bool:
     """演示1: 无硬件模拟验证。"""
     print("\n" + "=" * 70)
@@ -48,15 +77,14 @@ def demo_simulated() -> bool:
         DCDataExporter,
     )
     from fefetlab.measurements.dc.testing_utils import MockB1500
-    from fefetlab.instruments.b1500 import B1500
+    from fefetlab.b1500 import B1500
 
     # 1. 配置
     print("\n[Step 1] 创建配置...")
     config = DCSweepConfig.from_notebooks_default(ch_g=4, ch_d=5, ch_s=6)
     print("✓ Config created:")
-    print(f"  G=CH{config.channels['G'].channel}, "
-          f"D=CH{config.channels['D'].channel}, "
-          f"S=CH{config.channels['S'].channel}")
+    for line in build_dc_config_display_lines(config):
+        print(f"  {line}")
 
     # 2. 模拟B1500
     print("\n[Step 2] 创建模拟仪器...")
@@ -156,8 +184,12 @@ def demo_real_hardware() -> bool:
             print(f"  IDN: {idn}")
 
             # 创建API并执行扫描
-            print("\n[Step 3] 执行小范围 Id-Vg 扫描...")
+            print("\n[Step 3] 创建 API 并显示当前 DC 配置...")
             api = DCSweepAPI(session, ch_g=ch_g, ch_d=ch_d, ch_s=ch_s)
+            for line in build_dc_config_display_lines(api.config):
+                print(f"  {line}")
+
+            print("\n[Step 4] 执行小范围 Id-Vg 扫描...")
 
             result = api.run_idvg_sweep(
                 vg_points=[0.0, -0.2, -0.4],

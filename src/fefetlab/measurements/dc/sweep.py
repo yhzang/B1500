@@ -35,9 +35,6 @@ class DCSweepRunner:
         self.b1500.av(self.config.av_count, self.config.av_mode)
         self.b1500.fl(self.config.fl_mode)
 
-        channels = [ch.channel for ch in self.config.channels.values()]
-        self.b1500.cn(channels)
-
     def sweep_vg(
         self,
         vg_points: List[float],

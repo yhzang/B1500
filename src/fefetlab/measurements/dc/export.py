@@ -2,7 +2,8 @@
 
 import time
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional
+
 import pandas as pd
 
 
@@ -11,15 +12,38 @@ class DCDataExporter:
 
     Handles saving measurement data to CSV/JSON and generating
     quality control reports based on error status and data validity.
+
+    Public/current naming uses ``export_dir``.
+    Legacy code may still use ``base_dir``.
     """
 
-    def __init__(self, base_dir: Path = Path("runs")):
+    def __init__(
+        self,
+        export_dir: Optional[Path | str] = None,
+        *,
+        base_dir: Optional[Path | str] = None,
+    ):
         """Initialize exporter.
 
         Args:
-            base_dir: Base directory for saving runs (default: ./runs)
+            export_dir: Base directory for saving runs (recommended name)
+            base_dir: Legacy alias for ``export_dir``
         """
-        self.base_dir = base_dir
+        if export_dir is not None and base_dir is not None:
+            if Path(export_dir) != Path(base_dir):
+                raise ValueError("export_dir and base_dir must match when both are provided")
+
+        resolved_dir = export_dir if export_dir is not None else base_dir
+        self.base_dir = Path(resolved_dir) if resolved_dir is not None else Path("runs")
+
+    @property
+    def export_dir(self) -> Path:
+        """Preferred public alias for ``base_dir``."""
+        return self.base_dir
+
+    @export_dir.setter
+    def export_dir(self, value: Path | str) -> None:
+        self.base_dir = Path(value)
 
     def create_run_dir(self, sweep_type: str) -> Path:
         """Create timestamped run directory.
