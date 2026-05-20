@@ -117,3 +117,10 @@ __all__ = [
     "WgfmuWakeupResult",
     "WgfmuWakeupRunner",
 ]
+
+
+from .setup_helpers import (
+    ensure_wgfmu_dll_path,
+    autodetect_visa_addr,
+    autodetect_wgfmu_chan,
+)

@@ -26,52 +26,66 @@ import pandas as pd
 from .backend import WgfmuBackend
 
 
-# ---- Keysight WGFMU constants (see User Guide §3) ---------------------------
+# ---- Keysight WGFMU constants (verified against WGFMU.cs from B1530A
+# Instrument Library Sample Programs A04.00.2024.0540) ----------------------
 WGFMU_NO_ERROR = 0
 
+# WGFMU.setOperationMode (offset 2000)
 OPERATION_MODE_MAP = {
-    "DC": 0,
-    "FASTIV": 1,
-    "PG": 2,
-    "SMU": 3,
+    "DC": 2000,
+    "FASTIV": 2001,
+    "PG": 2002,
+    "SMU": 2003,
 }
 
+# WGFMU.setForceVoltageRange (offset 3000)
 FORCE_VOLTAGE_RANGE_MAP = {
-    "AUTO": 0,
-    "3V": 3000,
-    "5V": 5000,
-    "10V_NEGATIVE": -10000,
-    "10V_POSITIVE": 10000,
+    "AUTO": 3000,
+    "3V": 3001,
+    "5V": 3002,
+    "10V_NEGATIVE": 3003,
+    "10V_POSITIVE": 3004,
 }
 
+# WGFMU.setMeasureMode (offset 4000)
 MEASURE_MODE_MAP = {
-    "VOLTAGE": 1,
-    "CURRENT": 2,
+    "VOLTAGE": 4000,
+    "CURRENT": 4001,
 }
 
-MEASURE_CURRENT_RANGE_MAP = {
-    "1UA": 1,
-    "10UA": 2,
-    "100UA": 3,
-    "1MA": 4,
-    "10MA": 5,
-}
-
+# WGFMU.setMeasureVoltageRange (offset 5000)
 MEASURE_VOLTAGE_RANGE_MAP = {
-    "5V": 5000,
-    "10V": 10000,
+    "5V": 5001,
+    "10V": 5002,
 }
 
+# WGFMU.setMeasureCurrentRange (offset 6000)
+MEASURE_CURRENT_RANGE_MAP = {
+    "1UA": 6001,
+    "10UA": 6002,
+    "100UA": 6003,
+    "1MA": 6004,
+    "10MA": 6005,
+}
+
+# WGFMU.setMeasureEnabled (offset 7000)
+MEASURE_ENABLED_MAP = {
+    "DISABLE": 7000,
+    "ENABLE": 7001,
+}
+
+# WGFMU.setMeasureEvent (offset 12000)
 MEASURE_EVENT_DATA_MAP = {
-    "averaged": 0,
-    "raw": 1,
+    "averaged": 12000,
+    "raw": 12001,
 }
 
+# WGFMU.treatWarningsAsErrors / setWarningLevel (offset 1000)
 WARNING_LEVEL_MAP = {
-    "OFF": 0,
-    "SEVERE": 1,
-    "NORMAL": 2,
-    "INFORMATION": 3,
+    "OFF": 1000,
+    "SEVERE": 1001,
+    "NORMAL": 1002,
+    "INFORMATION": 1003,
 }
 
 
@@ -93,11 +107,18 @@ def _default_dll_search_paths() -> list[str]:
     candidates: list[str] = []
     if env_path:
         candidates.append(env_path)
-    # Standard Keysight install locations on Windows
+    # Standard Keysight install locations on Windows.
+    # System32 / SysWOW64 are where the modern installer drops wgfmu.dll
+    # (verified on 椰椰 2026-05-20 setup: B1530A Instrument Library
+    # A04.00.2024.0540 → C:\Windows\System32\wgfmu.dll for 64-bit).
     candidates += [
+        r"C:\Windows\System32\wgfmu.dll",
+        r"C:\Program Files\Keysight\B1530A\bin\wgfmu.dll",
         r"C:\Program Files\Keysight\B1500A\WGFMU\bin\wgfmu.dll",
         r"C:\Program Files (x86)\Keysight\B1500A\WGFMU\bin\wgfmu.dll",
         r"C:\Program Files\Agilent\B1500A\WGFMU\bin\wgfmu.dll",
+        # Legacy Agilent EasyEXPERT path (32-bit only, will fail under 64-bit Python)
+        r"C:\Program Files (x86)\Agilent\B1500\EasyEXPERT\Utilities\WGFMU\bin\wgfmu.dll",
         "wgfmu.dll",
     ]
     return candidates
@@ -221,6 +242,15 @@ class RealWgfmuBackend(WgfmuBackend):
     def open_session(self, resource: str):
         self._ensure_loaded()
         status = self._fn["openSession"](resource.encode("ascii"))
+        # If a session is already open (CONTEXT_ERROR=-3 with that message),
+        # close it transparently and retry.  This makes notebook re-runs and
+        # mid-cell experiments resilient.
+        if status == -3:
+            try:
+                self._fn["closeSession"]()
+            except Exception:
+                pass
+            status = self._fn["openSession"](resource.encode("ascii"))
         self._check("openSession", status)
         self.session_opened = True
         return status
@@ -363,9 +393,10 @@ class RealWgfmuBackend(WgfmuBackend):
 
     def set_measure_enabled(self, chan_id: int, enabled: bool):
         self._ensure_loaded()
+        code = MEASURE_ENABLED_MAP["ENABLE"] if enabled else MEASURE_ENABLED_MAP["DISABLE"]
         self._check(
             "setMeasureEnabled",
-            self._fn["setMeasureEnabled"](c_int(chan_id), c_int(1 if enabled else 0)),
+            self._fn["setMeasureEnabled"](c_int(chan_id), c_int(code)),
         )
 
     def set_measure_mode(self, chan_id: int, mode: str):
