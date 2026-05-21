@@ -8,8 +8,9 @@ All experiments share:
 - PGM: -5.0V, 100us, rise/fall 100ns
 - Reset: 0V, 1ms
 - Read: 3-point {-0.2, 0.0, +0.2}V, 5us each, Vd=0.05V
-- Gate: CH201, Drain: CH202 (yhzang B1500, GPIB1::17)
-- Measure range: 1MA (6004), FASTIV mode (2001)
+- Gate: CH202, Drain: CH201 (yhzang B1500 slot2 two-port assumption, GPIB1::17)
+- Measure range: 1MA (6004), FASTIV mode (2001); force ranges set explicitly
+- WGFMU+RSU has no SMU-style compliance current (Keysight B1530A User Guide), so safety is enforced by channel whitelist, voltage/range limits, and preview/confirmation gates.
 - Each delay point independently reset (anti-cumulative-bias)
 - Delay order randomized (anti-time-drift)
 - Single-point read only (anti-read-disturb), except E2
@@ -49,11 +50,77 @@ class PFeFETParams:
     vg_read_list: list = field(default_factory=lambda: [-0.2, 0.0, 0.2])
     vd_read: float = 0.05       # drain read voltage
     t_read_s: float = 5e-6      # read pulse width
-    chan_gate: int = 201         # WGFMU gate channel
-    chan_drain: int = 202        # WGFMU drain channel
-    measure_range: str = "1MA"  # current measure range
+    chan_gate: int = 202         # WGFMU gate channel (slot2 second port)
+    chan_drain: int = 201        # WGFMU drain channel (slot2 first port)
+    measure_range: str = "1MA"  # current measure range; not a compliance limit
+    gate_force_range: str = "10V_POSITIVE"  # covers +5V ERS and -5V PGM
+    drain_force_range: str = "3V"           # Vd read is only 50mV by default
+    max_abs_gate_v: float = 6.0              # software safety gate
+    max_abs_drain_v: float = 0.5             # software safety gate
+    allowed_channels: tuple = (201, 202, 301)
+    forbidden_channels: tuple = (302,)       # CH302 has no RSU on yhzang setup
     measure_points_per_read: int = 10  # samples per read pulse
     measure_average_s: float = 200e-9  # per-sample averaging
+
+
+def validate_params(p: PFeFETParams) -> None:
+    """Fail closed before any WGFMU output is configured.
+
+    Keysight B1530A WGFMU+RSU does not provide SMU-style compliance current.
+    Protection here is therefore software-side: channel whitelist, voltage caps,
+    explicit force/measure ranges, and preview/confirmation before live runs.
+    """
+    channels = [p.chan_gate, p.chan_drain]
+    if p.chan_gate == p.chan_drain:
+        raise ValueError(f"gate/drain channels must differ, got {p.chan_gate}")
+    bad = [ch for ch in channels if ch in p.forbidden_channels]
+    if bad:
+        raise ValueError(f"forbidden WGFMU channel(s) {bad}; CH302 has no RSU on this setup")
+    bad = [ch for ch in channels if ch not in p.allowed_channels]
+    if bad:
+        raise ValueError(f"unexpected WGFMU channel(s) {bad}; allowed={p.allowed_channels}")
+    gate_values = [p.v_ers, p.v_pgm, p.v_reset, *p.vg_read_list]
+    if max(abs(v) for v in gate_values) > p.max_abs_gate_v:
+        raise ValueError(f"gate voltage exceeds safety cap {p.max_abs_gate_v} V: {gate_values}")
+    if abs(p.vd_read) > p.max_abs_drain_v:
+        raise ValueError(f"drain read voltage {p.vd_read} V exceeds cap {p.max_abs_drain_v} V")
+    if p.measure_range.upper() not in {"1UA", "10UA", "100UA", "1MA", "10MA"}:
+        raise ValueError(f"unsupported measure_range={p.measure_range!r}")
+
+
+def build_e1_waveform_preview(cfg: "E1Config", state: str = "ERS", delay_s: float | None = None, vg_read: float | None = None) -> list[dict]:
+    """Return a simple gate/drain waveform preview for one E1 atomic point."""
+    p = cfg.params
+    validate_params(p)
+    delay_s = cfg.delays_s[0] if delay_s is None else delay_s
+    vg_read = p.vg_read_list[0] if vg_read is None else vg_read
+    v_write = p.v_ers if state == "ERS" else p.v_pgm
+    rows = []
+    t = 0.0
+    def add(dt, vg, vd, label):
+        nonlocal t
+        rows.append({"t_start_s": t, "dt_s": dt, "gate_v": vg, "drain_v": vd, "label": label})
+        t += dt
+    add(p.t_reset_s, p.v_reset, 0.0, "reset")
+    add(p.t_rise_s, v_write, 0.0, "write_rise")
+    add(p.t_ers_s if state == "ERS" else p.t_pgm_s, v_write, 0.0, "write_hold")
+    add(p.t_fall_s, p.v_reset, 0.0, "write_fall")
+    if delay_s > 0:
+        add(delay_s, p.v_reset, 0.0, "delay")
+    add(p.t_rise_s, vg_read, p.vd_read, "read_rise")
+    add(p.t_read_s, vg_read, p.vd_read, "read_hold")
+    add(p.t_fall_s, p.v_reset, 0.0, "read_fall")
+    return rows
+
+
+def save_waveform_preview(rows: list[dict], output_dir: str, label: str = "waveform_preview") -> str:
+    os.makedirs(output_dir, exist_ok=True)
+    path = os.path.join(output_dir, f"{label}.csv")
+    with open(path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["t_start_s", "dt_s", "gate_v", "drain_v", "label"])
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
 
 
 # ── E1: RAWD ────────────────────────────────────────────────────────
@@ -118,6 +185,7 @@ def run_e1_single_point(backend, cfg: E1Config, state: str,
     Returns dict with Id_mean, Id_std, Ig_mean, Ig_std.
     """
     p = cfg.params
+    validate_params(p)
     
     # Build gate pattern: reset -> write -> delay -> read
     gate_pattern = f"e1_gate_{state}_{delay_s:.0e}"
@@ -170,6 +238,8 @@ def run_e1_single_point(backend, cfg: E1Config, state: str,
     backend.set_operation_mode(p.chan_drain, "FASTIV")
     backend.set_measure_mode(p.chan_gate, "CURRENT")
     backend.set_measure_mode(p.chan_drain, "CURRENT")
+    backend.set_force_voltage_range(p.chan_gate, p.gate_force_range)
+    backend.set_force_voltage_range(p.chan_drain, p.drain_force_range)
     backend.set_measure_current_range(p.chan_gate, p.measure_range)
     backend.set_measure_current_range(p.chan_drain, p.measure_range)
     backend.set_measure_enabled(p.chan_gate, True)
@@ -296,7 +366,7 @@ class E5Config:
 
 
 __all__ = [
-    "PFeFETParams",
+    "PFeFETParams", "validate_params", "build_e1_waveform_preview", "save_waveform_preview",
     "E1Config", "E1Result", "build_e1_sequence", "run_e1_single_point", "save_e1_results",
     "E2Config",
     "E3Config", 
