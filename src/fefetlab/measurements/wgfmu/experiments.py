@@ -53,7 +53,7 @@ class PFeFETParams:
     chan_gate: int = 202         # WGFMU gate channel (slot2 second port)
     chan_drain: int = 201        # WGFMU drain channel (slot2 first port)
     measure_range: str = "1MA"  # current measure range; not a compliance limit
-    gate_force_range: str = "10V_POSITIVE"  # covers +5V ERS and -5V PGM
+    gate_force_range: str = "AUTO"            # spans both +5V ERS and -5V PGM safely
     drain_force_range: str = "3V"           # Vd read is only 50mV by default
     max_abs_gate_v: float = 6.0              # software safety gate
     max_abs_drain_v: float = 0.5             # software safety gate
