@@ -93,4 +93,6 @@ dmypy.json
 
 # Per-session pre-edit backups (kept local, never committed)
 _agent/archive/
+_agent/sync_backup_before_unify_*/
+_agent/remote_backup_before_hermes_test_*/
 .venv-wsl/

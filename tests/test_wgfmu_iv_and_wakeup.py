@@ -6,7 +6,10 @@ The Keysight DLL must NEVER be loaded as a side-effect of *import*.
 
 from __future__ import annotations
 
+import ctypes
 import math
+import sys
+import types
 
 import pytest
 
@@ -25,6 +28,12 @@ from fefetlab.measurements.wgfmu import (
     linear_voltage_segments,
     list_wgfmu_scaffold_features,
 )
+from fefetlab.measurements.wgfmu.experiments import (
+    E1Config,
+    PFeFETParams,
+    run_e1_single_point,
+)
+from fefetlab.measurements.wgfmu.setup_helpers import clear_b1500_status_for_wgfmu_open
 
 
 # ---------------------------------------------------------------- pulse builder
@@ -117,6 +126,28 @@ def test_iv_sweep_runner_rejects_unknown_channel(tmp_path):
         runner.run(resource="DUMMY::INSTR", segments=segments, cfg=cfg)
 
 
+def test_e1_single_point_uses_backend_dataframe_result_contract():
+    """Regression: E1 helper must treat WGFMU result size as a tuple and data as a DataFrame."""
+    backend = DummyWgfmuBackend()
+    backend.open_session("DUMMY::INSTR")
+    backend._channels = [201, 202]
+    cfg = E1Config(
+        params=PFeFETParams(
+            chan_gate=202,
+            chan_drain=201,
+            allowed_channels=(201, 202),
+            measure_points_per_read=4,
+        ),
+        delays_s=[1e-6],
+    )
+
+    result = run_e1_single_point(backend, cfg, state="ERS", delay_s=1e-6, vg_read=0.0)
+
+    assert {"id_mean", "id_std", "ig_mean", "ig_std"} <= set(result)
+    assert result["id_mean"] > 0
+    assert result["ig_mean"] > 0
+
+
 # ---------------------------------------------------------------- wakeup runner
 def test_wakeup_runner_with_dummy_produces_per_cycle_readout(tmp_path):
     """End-to-end wake-up workflow contract: stages × cycles → cycles_df rows.
@@ -173,11 +204,76 @@ def test_real_backend_can_be_constructed_without_dll_on_any_os():
 
 
 def test_real_backend_load_fails_gracefully_when_dll_missing(monkeypatch):
-    """Calling .load() with no DLL must raise a clear OSError, not segfault."""
+    """Calling .load() with no usable DLL must raise a clear OSError, not segfault.
+
+    The B1500 test machine has a real system-level wgfmu.dll installed, so this
+    test must not rely on a physically missing DLL. Mock the loader instead.
+    """
     monkeypatch.delenv("WGFMU_DLL_PATH", raising=False)
+
+    def _missing_dll(_path):
+        raise OSError("mock missing wgfmu.dll")
+
+    monkeypatch.setattr(ctypes, "WinDLL", _missing_dll, raising=False)
     backend = RealWgfmuBackend(dll_path="/nonexistent/wgfmu.dll")
-    with pytest.raises(OSError):
+    with pytest.raises(OSError, match="Could not load wgfmu\\.dll"):
         backend.load()
+
+
+def test_wgfmu_open_preflight_drains_errx_without_cls(monkeypatch):
+    """Regression: yhzang B1500A enqueues +100 on *CLS, so preflight must not send it."""
+
+    class FakeInst:
+        def __init__(self):
+            self.writes = []
+            self.reads = iter([
+                '100,"Undefined GPIB command."',
+                '0,"No Error."',
+                '0,"No Error."',
+            ])
+            self.closed = False
+
+        def clear(self):
+            return None
+
+        def write(self, cmd):
+            self.writes.append(cmd)
+            if cmd == "*CLS":
+                raise AssertionError("preflight must not send *CLS")
+
+        def read(self):
+            return next(self.reads)
+
+        def query(self, cmd):
+            assert cmd == "*IDN?"
+            return "Agilent Technologies,B1500A,MY55231213,A.06.02.2023.0401"
+
+        def close(self):
+            self.closed = True
+
+    class FakeRM:
+        def __init__(self):
+            self.inst = FakeInst()
+            self.closed = False
+
+        def open_resource(self, addr):
+            assert addr == "GPIB1::17::INSTR"
+            return self.inst
+
+        def close(self):
+            self.closed = True
+
+    fake_rm = FakeRM()
+    monkeypatch.setitem(sys.modules, "pyvisa", types.SimpleNamespace(ResourceManager=lambda: fake_rm))
+    monkeypatch.setattr("time.sleep", lambda _s: None)
+
+    idn = clear_b1500_status_for_wgfmu_open("GPIB1::17::INSTR")
+
+    assert "B1500A" in idn
+    assert "*CLS" not in fake_rm.inst.writes
+    assert fake_rm.inst.writes == ["ERRX?", "ERRX?", "ERRX?"]
+    assert fake_rm.inst.closed
+    assert fake_rm.closed
 
 
 # ---------------------------------------------------------------- feature map

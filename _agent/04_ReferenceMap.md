@@ -8,7 +8,7 @@
   - 项目4 何时调用项目3:
     - 总台 Round 选定假设 (例 R1-A: WGFMU 扫 IV 验证 H2)
     - 总台出测试单 (TR-YYYYMMDD-NN), 走 `项目4_FEFET测试/_agent/runbooks/测试任务发起规约.md`
-  - 数据回流目的地: `项目4_FEFET测试/实测数据/TR-*/`
+  - 数据回流目的地: 正式测试单用 `项目4_FEFET测试/实测数据/TR-*/`；当前 R1 WGFMU 调试/判别数据按实验类型进 `项目4_FEFET测试/实测数据/{E1_rawd,E2_read_disturb,S0_open_fixture_smoke}/`，详见项目4 `_agent/data_inventory_20260522_wgfmu.md`
   - 完成任务后: **必须**回写一行到项目4 `_agent/03_Log.md`
   - 测试执行人: 臧沂豪 (yhzang@mail.ustc.edu.cn), 不是 Hermes 直接跑
 

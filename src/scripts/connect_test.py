@@ -40,7 +40,7 @@ def drain_err(max_n=50):
         print(f"ERRX?: {code} -> {msg}")
 
 try:
-    inst.write("*RST")
+    inst.write("*CLS")  # clear status/error queue; avoid heavy *RST in WGFMU preflight
     drain_err()
 
     print("*IDN? ->", q("*IDN?"))

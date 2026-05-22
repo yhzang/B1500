@@ -1,4 +1,114 @@
+
+---
+
+## 2026-05-22 22:20 CST L10W10_02 fresh 复测 + pause/recovery 完成
+- Goal：按 L10W10_01 的最小包复测 L10W10_02 fresh 点：S1 → E1 full-delay wide-Vg 3 reps → 20-cycle → pause recovery。
+- Evidence：
+  - S1 live：`--stage S1 --live --confirm S1 --device-id L10W10_02 --geometry L10W10 --s1-reps 1` → `S1_DONE_PROCEED_TO_E1`，3 rows，`max_abs_Ig_A=1.004714e-06`，CSV `D:\test\B1500\runs\20260522_215017_S1_device_read_only_baseline_L10W10_02\s1_device_read_only_baseline.csv`。
+  - E1 3-rep live 曾在第 2 rep 遇到 `WGFMU_initialize failed status=-6: viReadSTB returned -1073807360`，未保存完整 CSV；复核 S1 `L10W10_02_POSTERR` 通过，`max_abs_Ig_A=1.578818e-06`。
+  - E1 改为单 rep 保存：REP1/2/3 均完成，CSV 分别为 `D:\test\B1500\runs\20260522_215417_E1_RAWD_QUICK300ms_v2_L10W10_02_REP1\...`、`20260522_215616...REP2`、`20260522_215717...REP3`；rows 各 132，`max_abs_Ig_A=2.272456e-05/1.768234e-05/1.964097e-05`。
+  - 20-cycle live：`D:\test\B1500\runs\20260522_215935_CYCLE_endurance_L10W10_02\cycle_endurance.csv`，120 rows，`max_abs_Ig_A=1.855480e-05`。
+  - Pause recovery 5-cycle live：`D:\test\B1500\runs\20260522_221114_CYCLE_endurance_L10W10_02_RECOVERY5\cycle_endurance.csv`，30 rows，`max_abs_Ig_A=1.870009e-05`。
+- Cloud archive：项目4 `实测数据/S1_device_read_only_baseline/20260522_L10W10_02*/`、`实测数据/E1_rawd/20260522_L10W10_02_fullDelay_wideVg_rep{1,2,3}/`、`实测数据/cycle_endurance/20260522_L10W10_02_{20cycles,recovery_after_pause_5cycles}/`。
+- Current recommendation：L10W10_02 已完成最小复现包。长 E1 以后优先单 rep 保存；这颗点不建议继续大 stress，若补做只做 30–60min 后 5-cycle recovery 或换新点统计。
+
+## 2026-05-22 21:45 CST L10W10_01 pause/recovery + wide-Vg 参数修正
+- Goal：继续当前 L10W10_01 点，验证 20-cycle 后 MW 是否可暂停恢复；同时修正 `--e1-wide-vg` 漏掉 `Vg=-1.0V` 的脚本问题。
+- What changed：`scripts/wgfmu_next_round_minimal.py` 中 `VG_E5` 已改为 `[-1.0, -0.7, -0.4, -0.2, 0.0, 0.2]`；远端 `D:\test\B1500` 已同步，sha256 `4b9ad542deee74343fa7b25e60d4f3817037ea50872e456393af1b83d067a0c6`；`py_compile` 和 dry-run E1 通过，PLAN 输出包含 `-1.0V`。
+- Evidence：
+  - Recovery 5-cycle live：`--stage CYCLE --live --confirm CYCLE --device-id L10W10_01 --geometry L10W10 --cycle-count 5 --cycle-ig-stop-uA 30` → `CYCLE_ENDURANCE_DONE`，30 rows，`max_abs_Id_A=2.541764e-06`，`max_abs_Ig_A=1.661098e-05`，CSV `D:\test\B1500\runs\20260522_211102_CYCLE_endurance_L10W10_01\cycle_endurance.csv`。
+  - Corrected after-pause E1 live：`--stage E1 --live --confirm E1 --device-id L10W10_01 --geometry L10W10 --e1-reps 1 --e1-wide-vg --e1-full-delays --e1-ig-stop-uA 30` → `E1_DONE...`，132 rows，`max_abs_Id_A=3.656449e-06`，`max_abs_Ig_A=2.842555e-05`，CSV `D:\test\B1500\runs\20260522_213549_E1_RAWD_QUICK300ms_v2_L10W10_01\e1_rawd_quick300ms_v2.csv`。
+- Note：中间曾跑过一次旧 `VG_E5=[-0.4..+0.4]` 的 E1（`20260522_211752...`），不含主读点 `-1.0V`，只作低扰健康参考，不用于主判读。
+- Cloud archive：项目4 `实测数据/cycle_endurance/20260522_L10W10_01_recovery_after_pause_5cycles/` 与 `实测数据/E1_rawd/20260522_L10W10_01_after_pause_fullDelay_wideVg_fixed_1rep/`。
+- Next step：因最后一次 E1 `max |Ig|≈28.4µA` 接近 30µA 诊断门限，不建议继续 stress 当前 L10W10_01；若继续机制统计，换 fresh 点跑最小包。
+
+## 2026-05-22 18:58 CST E1 QUICK300ms v2 + E2 minimal live 完成
+- Goal：在 S1 + 低压 VOLTAGE_ECHO 通过后，按 stop gate 继续完成 L40W10_02 的 E1 QUICK300ms v2 与 E2 minimal。
+- Evidence：
+  - E1 live：`--stage E1 --live --confirm E1 --device-id L40W10_02 --geometry L40W10 --e1-reps 1` → `E1_DONE_PROCEED_TO_E2_MINIMAL_IF_TREND_HEALTHY`，48 rows，`max_abs_Id_A=1.719605e-06`，`max_abs_Ig_A=5.274616e-06`，CSV `D:\test\B1500\runs\20260522_185326_E1_RAWD_QUICK300ms_v2_L40W10_02\e1_rawd_quick300ms_v2.csv`。
+  - E2 live：`--stage E2 --live --confirm E2 --device-id L40W10_02 --geometry L40W10 --e2-reps 1` → `E2_MINIMAL_DONE`，24 rows，`max_abs_Id_A=5.188955e-07`，`max_abs_Ig_A=5.897400e-06`，CSV `D:\test\B1500\runs\20260522_185718_E2_minimal_A1_A100_C1_C10_L40W10_02\e2_minimal_A1_A100_C1_C10.csv`。
+- Cloud archive：已复制到项目4 `实测数据/E1_rawd/20260522_L40W10_02_QUICK300ms_v2/` 与 `实测数据/E2_read_disturb/20260522_L40W10_02_minimal_A1_A100_C1_C10/`。
+- Initial read：E1 Vg=0 的 MW(ERS-PGM) 从 1µs `+1.33 µA` 衰减到 100–300ms 接近零；E2 Vg=0 的 A1/A100/C1/C10 为 `+9.13 nA/-16.15 nA/+35.82 nA/+136.97 nA`，未复现昨晚 C 模式强负 MW。
+- Next step：先写判读收口，不直接继续 E3；若继续上机，优先补 E1 repeats 或 E5 read-window grid。
+
+## 2026-05-22 18:51 CST S1 器件只读 + 低压 VOLTAGE_ECHO 通过
+- Goal：在无示波器条件下，继续推进到 E1 前先用 WGFMU 自身 VOLTAGE 模式对低压 read 窗做最小自检，同时不对器件施加写脉冲。
+- What changed：新增 `scripts/wgfmu_voltage_echo_check.py`，复用 stop-gated 通道/preflight 规则，固定 Gate=202、Drain=201；live 必须 `--confirm VOLTAGE_ECHO`；只发 Gate=-0.2/0/+0.2 V、Drain=0.05 V，并以 VOLTAGE 模式回读。
+- Evidence：
+  - S1 live：`--stage S1 --live --confirm S1 --device-id L40W10_02 --geometry L40W10 --s1-reps 1` → `S1_DONE_PROCEED_TO_E1`，3 rows，`max_abs_Id_A=2.168700e-07`，`max_abs_Ig_A=1.552721e-06`，CSV `D:\test\B1500\runs\20260522_183051_S1_device_read_only_baseline_L40W10_02\s1_device_read_only_baseline.csv`。
+  - VOLTAGE_ECHO dry-run/py_compile on test machine passed；live：`--live --confirm VOLTAGE_ECHO --device-id L40W10_02 --geometry L40W10` → `VOLTAGE_ECHO_DONE_LOW_VOLTAGE_ONLY`，`max_abs_voltage_error_V=1.810184e-03`，CSV `D:\test\B1500\runs\20260522_185045_VOLTAGE_ECHO_L40W10_02\voltage_echo_low_v_read_only.csv`。
+- Limitation：这是 WGFMU 低压端子自测，不是示波器；不能证明探针端 `±5V/100us` 写脉冲真实幅值/极性/脉宽。该疑问保留到 E1 数据健康性/未来示波器验证。
+- Next step：可进入 E1 QUICK300ms v2，建议先 `--e1-reps 1`；任何 `E1_STOP_*` 立即停止，不进入 E2。
+
+## 2026-05-22 17:47 CST WGFMU -6 真根因修正 + S0 空夹具 live 低扰通过
+- Goal：在不产生输出的前提下复核 `WGFMU_openSession status=-6` 真根因，最小修复后完成 dry-run/只开会话验证，并执行 S0 空夹具低扰 live。
+- Root cause：`GPIB1::17::INSTR` 可用，raw `WGFMU_openSession` 可成功；旧 helper 的 `*CLS` 会在 yhzang B1500A 入队 `+100,Undefined GPIB command`，随后 WGFMU DLL openSession 读到该错误返回 `-6`。
+- What changed：
+  - `src/fefetlab/measurements/wgfmu/setup_helpers.py`：preflight 改为 `inst.clear()` + drain `ERRX?` + `*IDN?` + 再 drain `ERRX?` + close `inst/rm` + `sleep(2)`；不再发 `*CLS`。
+  - `scripts/wgfmu_next_round_minimal.py`：日志改为 `B1500 preflight ERRX drain OK`。
+  - `tests/test_wgfmu_iv_and_wakeup.py`：新增 `test_wgfmu_open_preflight_drains_errx_without_cls`，防止回退到 `*CLS`。
+- Evidence：
+  - 真机同步到 `D:\test\B1500` 后：`py_compile` 通过；新增回归测试 1 passed；`PLAN`/`ALL_DRY --s0-reps 1 --s1-reps 1 --e1-reps 1 --e2-reps 1` 通过；只开会话验证通过，`WGFMU_CHANNELS=[201,202,301,302]`，close status 0。
+  - S0 空夹具 live：`--stage S0 --live --confirm S0 --device-id OPEN_FIXTURE --geometry OPEN --s0-reps 1` → `S0_DONE_PROCEED_TO_S1_IF_PROBES_ON_DEVICE`，3 rows，`max_abs_Id_A=1.445244e-07`，`max_abs_Ig_A=3.057571e-07`，CSV `D:\test\B1500\runs\20260522_174642_S0_open_fixture_smoke_OPEN_FIXTURE\s0_open_fixture_smoke.csv`。
+- Next step：不要自动跑 S1；只有 yhzang 确认探针已落到器件后，再跑 S1 device read-only baseline（仍以 `|Ig|>5µA` 为 stop gate）。
+
+## 2026-05-22 06:45 CST 下一轮 WGFMU stop-gated CLI + 上机文档
+- Goal：把项目4 判读后的下一轮上机顺序落实到测试机，避免直接扩大矩阵。
+- What changed：新增 `scripts/wgfmu_next_round_minimal.py`，提供 S0 空夹具/抬针 read-only smoke、S1 器件只读 baseline、E1 RAWD QUICK300ms v2、E2 minimal (`A1/A100/C1/C10`, skip C100)。固定 Gate=CH202, Drain=CH201；live 模式必须 `--confirm <STAGE>`，不允许 live 一次性全跑。
+- 上机文档：`_agent/runbooks/20260522_next_round_stop_gated_wgfmu.md`，同已同步到真机 `D:\test\B1500\_agent\runbooks\...`。
+- Evidence：本机 dry-run 通过；真机 SSH 下 `py_compile`、`--stage PLAN`、`--stage ALL_DRY --s0-reps 1 --s1-reps 1 --e1-reps 1 --e2-reps 1` 均通过；dry-run 输出 `DRY_RUN_BACKEND: no VISA, no DLL, no hardware output`，`max_vectors_seen=640<2048`。
+- Next step：yhzang 只需从 PowerShell 跑 S0，看到 `S0_DONE_PROCEED_TO_S1_IF_PROBES_ON_DEVICE` 后再进入 S1；任何 `*_STOP_*` 都先回报码和 CSV，不继续。
+
+## 2026-05-22 · G盘 ↔ 真机 D:\test\B1500 双端代码统一
+
+- 背景：yhzang 有时改 G 盘工作区，有时改真机 `D:\test\B1500`，两端 raw hash 差异较多。
+- 对比方式：先做 raw manifest，再做语义 manifest；文本统一换行，notebook 去掉输出/metadata 后比较。
+- 结论：源码/测试语义已经一致；真实活跃差异只在 `_agent` 文档与 `notebooks/30-34`。大量 raw diff 只是 CRLF/LF。
+- 统一策略：
+  - `_agent/01_State.md`, `_agent/03_Log.md`, `_agent/05_Handoff.md`：以 G 盘最新版为准同步到真机。
+  - `notebooks/31-34`：以 G 盘最新版为准同步到真机，保留 `clear_b1500_status_for_wgfmu_open()` preflight 与 Gate=202/Drain=201。
+  - `notebooks/30_E1_rawd.ipynb`：以 G 盘最新版为代码底座，但保留真机端用户参数 `DEVICE_ID="L40W10_01"`, `GEOMETRY="L40W10"`。
+  - `notebooks/30_E1_rawd_QUICK300ms.ipynb`：真机端独有，已复制回 G 盘，并升级为同样的 preflight/helper 写法。
+  - 真机端旧 `.bak` 与 `_agent/remote_backup_before_hermes_test_*` 只作备份，不参与代码统一。
+- 备份位置：
+  - G 盘：`_agent/sync_backup_before_unify_20260522_041927/`
+  - 真机：`D:\test\B1500\_agent\sync_backup_before_unify_20260522_041936\`
+- 验证：
+  - 双端语义 manifest 复查：活跃文件 0 diff；剩余差异全部为备份目录/`.bak`。
+  - 真机：`D:\test\B1500\.venv\Scripts\python.exe -m pytest tests/test_wgfmu_iv_and_wakeup.py tests/test_wgfmu_scaffold.py -q` → **12 passed in 0.71s**。
+- 后续口径：短期以 G 盘工作区为规范源；真机端可跑实验/临时改 notebook，但跑前跑后要回同步，尤其不要让 `DEVICE_ID/GEOMETRY` 与 preflight 修复互相覆盖。
+
 # 工作日志
+
+## 2026-05-22 00:55 CST WGFMU openSession=-6 事故收口 + E1-E5 preflight 固化
+- Goal：收口 E1 QUICK300ms / E1-E5 真机 notebook 的 `WGFMU_openSession status=-6`，同时清掉旧 Gate/Drain 反接口径和 `*RST` preflight 风险。
+- Root cause：异常中断/上一轮 notebook 后，B1500 GPIB error queue 与 VISA/GPIB 资源状态残留；WGFMU DLL `openSession` 在旧状态下返回 -6。不是 DLL 位数、不是通道不存在。
+- What changed：
+  - 新增 `clear_b1500_status_for_wgfmu_open(VISA_ADDR)`：`inst.clear()` → drain `ERRX?` 到 0 → `*IDN?` → 再 drain `ERRX?` → `inst.close()` → `rm.close()` → `sleep(2)`；不发 `*CLS` / `*RST`。
+  - `notebooks/30_E1_rawd.ipynb` 到 `34_E5_visibility.ipynb` 的所有 `backend.open_session(VISA_ADDR)` 前均插入该 preflight。
+  - `src/fefetlab/measurements/wgfmu/experiments.py` 修复 `run_e1_single_point()` 读取 backend result 的旧契约：`get_measure_value_size()` 是 `(completed,total)`，`get_measure_values()` 是 DataFrame。
+  - `tests/test_wgfmu_iv_and_wakeup.py` 新增 E1 单点回归测试。
+  - `_agent/01_State.md` / `_agent/05_Handoff.md` 更新真机拓扑与硬接线：Gate=CH202, Drain=CH201；slot2/3 才是 B1530A WGFMU。
+  - `src/scripts/connect_test.py` 旧 `*RST` 改为 `*CLS`，避免把重置当成普通 WGFMU preflight。
+- Evidence：
+  - 全项目扫描旧口径：没有发现“把 gate 赋给自动探测结果或 CH201”的可执行代码；剩余 Gate=CH202/Drain=CH201 命中均为正确口径或历史更正说明。
+  - E1-E5 notebook code cell 语法解析通过；每个 notebook 均 `import clear_b1500_status_for_wgfmu_open` 且 `preflight_count=3`。
+  - **真机测试机 SSH 验证**：`Administrator@100.108.189.9`，`D:\test\B1500`，`.venv\Scripts\python.exe -m pytest tests/test_wgfmu_iv_and_wakeup.py tests/test_wgfmu_scaffold.py -q` → **12 passed in 0.71s**。注意：项目3 WGFMU 测试应在真机测试机跑，不要在本机 WSL 里假跑。
+  - 测试补丁：`test_real_backend_load_fails_gracefully_when_dll_missing` 改为 mock `ctypes.WinDLL` 抛 `OSError`，因为真机 Windows 已安装系统级 `C:\Windows\System32\wgfmu.dll`，不能用“传不存在路径”模拟缺 DLL。
+- Next step：真机 `D:\test\B1500` 当前已同步关键源码/测试文件并通过 pytest；Jupyter 里不要只 Restart Kernel，如果浏览器 tab 还开着旧 notebook，要 Refresh/Reopen 文件，避免执行 stale in-memory cell。从 setup cell 重新跑，确认出现 `B1500 preflight ERRX drain OK: ...` 再进实验循环。
+
+## 2026-05-21 22:25 CST E2 read-disturb notebook 修复 B1530A pattern vector 上限
+- Goal：继续真机 E2 (`notebooks/31_E2_read_disturb.ipynb`) 跑到 `Mode C, n_read=100` 时的失败；现象是单个 WGFMU pattern 被塞进约 6423 个 vector，超过 B1530A 单 pattern 2048 vector 上限。
+- What changed：
+  - 远程测试机 `D:\test\B1500\notebooks\31_E2_read_disturb.ipynb` 已先备份为 `31_E2_read_disturb.ipynb.bak_20260521_222009`。
+  - Cell 2 固定真实接线：`Gate=CH202, Drain=CH201`，不再用 autodetect（防止反接）。
+  - Cell 4 改成 split-dose：Reset+Write 执行一次；dose 按安全 vector budget 分块执行；最后 verify read 执行一次。C/n=100 自动分块为 `[30, 30, 30, 10]`，单 gate pattern 最大 1920 vectors。
+  - 同步回 G 盘工作区同名 notebook，sha256=`e09271a7fcc23856117bcac56e483995999724d2d0575dfbbb83a780b4b3b3c3`。
+- Evidence：
+  - 远程 `.venv` 下编译 notebook 全部 code cell 通过。
+  - 远程 dummy backend 端到端验证通过：`mode C n=100 -> execute_count=6, max_vectors_seen=1920, rows=3`。
+- Current state：E2 notebook 已可重新从 helper cell 开始执行；预期不再触发 2048 vector 上限错误。
+- Next step：在真机 notebook 中从 Cell 4/5/6 继续跑 E2；若仍报错，优先看是否是多 execute 分块带来的 session/timeout 问题，而不是 vector 上限。
 
 ## 2026-05-16 05:30 WGFMU 模块编码完成（驱动层 + 波形构建 + 测量协议）
 - Goal：椰椰要求把 WGFMU 部分写好，能像 SMU/DC 链路那样通过代码控制 B1500 跑 WGFMU 功能。**只要编码 + 测试通过证明**，不要画图、不要 mock 数据、不要 demo。

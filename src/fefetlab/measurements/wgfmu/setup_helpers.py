@@ -18,6 +18,8 @@ inevitable surprises every new test machine throws at us:
 from __future__ import annotations
 
 import os
+import csv
+from io import StringIO
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -94,6 +96,72 @@ def autodetect_visa_addr(
         rm.close()
 
 
+def clear_b1500_status_for_wgfmu_open(
+    visa_addr: str,
+    *,
+    timeout_ms: int = 10000,
+    settle_s: float = 2.0,
+) -> str:
+    """Drain stale B1500 GPIB error queue before ``WGFMU_openSession``.
+
+    After an abnormal WGFMU/notebook termination, stale B1500 error-queue
+    entries can make ``WGFMU_openSession`` fail with status=-6 and messages
+    such as ``+100,Undefined GPIB command``.  Use a short pyvisa session to
+    clear the VISA interface and drain B1500 ``ERRX?`` entries, then close both
+    the instrument and ResourceManager and wait before opening the WGFMU DLL
+    session.
+
+    Do not send ``*CLS`` or ``*RST`` here by default: on the yhzang B1500A,
+    ``*CLS`` itself was observed to enqueue ``+100,Undefined GPIB command``;
+    ``*RST`` is heavier and can reset module state. Return the ``*IDN?`` string
+    when available so notebooks can show the preflight really talked to the
+    B1500.
+    """
+    import time
+    import pyvisa  # local import — pyvisa is heavy and Windows-only in practice
+
+    rm = pyvisa.ResourceManager()
+    inst = None
+    idn = ""
+    def _drain_errx(max_n: int = 20) -> None:
+        for _ in range(max_n):
+            inst.write("ERRX?")
+            raw = inst.read().strip()
+            row = next(csv.reader(StringIO(raw)))
+            code = int(row[0])
+            if code == 0:
+                break
+
+    try:
+        inst = rm.open_resource(visa_addr)
+        inst.timeout = timeout_ms
+        inst.write_termination = "\n"
+        inst.read_termination = None
+        inst.query_delay = 0.05
+        try:
+            inst.clear()
+        except Exception:
+            pass
+        _drain_errx()
+        try:
+            idn = inst.query("*IDN?").strip()
+        except Exception:
+            idn = ""
+        _drain_errx()
+        return idn
+    finally:
+        if inst is not None:
+            try:
+                inst.close()
+            except Exception:
+                pass
+        try:
+            rm.close()
+        except Exception:
+            pass
+        time.sleep(settle_s)
+
+
 def autodetect_wgfmu_chan(
     backend,
     *,
@@ -123,5 +191,6 @@ def autodetect_wgfmu_chan(
 __all__ = [
     "ensure_wgfmu_dll_path",
     "autodetect_visa_addr",
+    "clear_b1500_status_for_wgfmu_open",
     "autodetect_wgfmu_chan",
 ]

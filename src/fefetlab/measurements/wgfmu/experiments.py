@@ -255,11 +255,12 @@ def run_e1_single_point(backend, cfg: E1Config, state: str,
     backend.execute()
     backend.wait_until_completed()
     
-    # Get results - drain current during read
-    n_measured = backend.get_measure_value_size(p.chan_drain)
-    if n_measured > 0:
-        times, values = backend.get_measure_values(p.chan_drain)
-        id_arr = np.array(values[:n_measured])
+    # Get results - drain current during read. Backend contract:
+    # get_measure_value_size() -> (completed, total), get_measure_values() -> DataFrame.
+    drain_completed, _ = backend.get_measure_value_size(p.chan_drain)
+    if drain_completed > 0:
+        drain_df = backend.get_measure_values(p.chan_drain)
+        id_arr = drain_df["value"].to_numpy(dtype=float)[:drain_completed]
         result = {
             "id_mean": float(np.mean(id_arr)),
             "id_std": float(np.std(id_arr)),
@@ -268,10 +269,10 @@ def run_e1_single_point(backend, cfg: E1Config, state: str,
         result = {"id_mean": 0.0, "id_std": 0.0}
     
     # Gate current (leakage monitoring)
-    n_gate = backend.get_measure_value_size(p.chan_gate)
-    if n_gate > 0:
-        _, gvals = backend.get_measure_values(p.chan_gate)
-        ig_arr = np.array(gvals[:n_gate])
+    gate_completed, _ = backend.get_measure_value_size(p.chan_gate)
+    if gate_completed > 0:
+        gate_df = backend.get_measure_values(p.chan_gate)
+        ig_arr = gate_df["value"].to_numpy(dtype=float)[:gate_completed]
         result["ig_mean"] = float(np.mean(ig_arr))
         result["ig_std"] = float(np.std(ig_arr))
     else:

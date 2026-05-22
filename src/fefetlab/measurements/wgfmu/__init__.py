@@ -122,5 +122,6 @@ __all__ = [
 from .setup_helpers import (
     ensure_wgfmu_dll_path,
     autodetect_visa_addr,
+    clear_b1500_status_for_wgfmu_open,
     autodetect_wgfmu_chan,
 )
