@@ -90,18 +90,18 @@ PYTHONIOENCODING=utf-8 python scripts/verify_dc_sweep.py --real
 - 若只是本地开发，可先看调用路径和参数，不必把 notebook 运行结果表述为正式验收。
 - 若要做真机验证，请在连接 B1500 的电脑上运行。
 
-### Notebook 12-14：WGFMU 原型 + 正式脚手架
+### Notebook 12-34：WGFMU 原型、真实上机与交互式实验
 
 文件：
-- `notebooks/12_wgfmu_smoke.ipynb`
-- `notebooks/13_wgfmu_step_pulse_observe.ipynb`
-- `notebooks/14_wgfmu_sampling_smoke.ipynb`
+- `notebooks/12_wgfmu_smoke.ipynb`（历史原型 / bring-up 参考）
+- `notebooks/20-23_*`（L0/L1 dry-run / realdevice 验证）
+- `notebooks/30-34_*`（E1/E2/E3/E4/E5 交互式实验入口）
 
 当前口径：
-- `notebooks/12~14` 仍属于 WGFMU 原型 / bring-up 记录。
-- 其中 `12_wgfmu_smoke.ipynb` 是当前最直接的原型 smoke 入口。
-- 仓库里已经新增正式的 `src/fefetlab/measurements/wgfmu/` 脚手架模块，并有 `tests/test_wgfmu_scaffold.py` 做本地 pytest。
-- 但真实官方库绑定与真机联调尚未完成，因此不能把它描述成“真实 WGFMU 功能已全部就绪”。
+- `src/fefetlab/measurements/wgfmu/` 已包含正式模块：dummy backend、`RealWgfmuBackend`、pulse builder、IV/wake-up runner、E1 helper 与 setup helpers。
+- 当前真机主入口优先用 CLI：`scripts/wgfmu_next_round_minimal.py`，避免 Jupyter stale cell。
+- 真机测试必须在 yhzang B1500 测试机 `D:\test\B1500` 执行；WSL 本地只做 dummy/dry-run/import 验证。
+- WGFMU open 前不发 `*CLS`；统一走 `clear_b1500_status_for_wgfmu_open()`。
 
 ---
 
@@ -112,16 +112,17 @@ PYTHONIOENCODING=utf-8 python scripts/verify_dc_sweep.py --real
 - [x] `scripts/verify_dc_sweep.py`（本地 Mock / `--real` 双入口）
 - [x] `tests/test_verify_dc_sweep_script.py`（验证脚本输出与关键配置可见性）
 - [x] `tests/test_dc_measurement.py`（DC pytest 本地验证文件）
-- [x] `tests/test_wgfmu_scaffold.py`（WGFMU 脚手架 pytest）
+- [x] `tests/test_wgfmu_scaffold.py`（WGFMU smoke / dummy backend pytest）
+- [x] `tests/test_wgfmu_iv_and_wakeup.py`（WGFMU pulse builder / IV / wake-up / real backend / preflight 回归）
 - [x] `notebooks/10_dc_api_idvg_example.ipynb`
 - [x] `notebooks/11_dc_api_idvd_example.ipynb`
 - [x] `notebooks/12_wgfmu_smoke.ipynb` 等 WGFMU 原型 notebook
 
 ### 当前不应再写成“已完成”的事项
 
-- [ ] 仓库内真机验证结果
-- [ ] “全部通过” / “READY”
-- [ ] WGFMU 真实官方库接入与真机联调完成态
+- [ ] 仓库内替代真机记录的口头验收（真机结果必须有远程命令/CSV/日志）
+- [ ] “全部通过” / “READY” 这类无边界总括
+- [ ] 未经 stop gate 的一次性 live 全跑
 - [ ] `scripts/batch_sweep.py`
 - [ ] `protocols/device_characterization.py`
 
@@ -175,16 +176,16 @@ PYTHONIOENCODING=utf-8 python scripts/verify_dc_sweep.py
 |------|--------------|------|
 | DC 本地验证 | 可做本地 Mock / 模拟验证 | 以实际命令结果为准 |
 | pytest | 存在实际用例文件 | 包括 `tests/test_verify_dc_sweep_script.py`、`tests/test_dc_measurement.py`、`tests/test_wgfmu_scaffold.py` |
-| 真机验证 | 需外部电脑执行 | 本仓库不记录验收结果 |
-| WGFMU | 正式脚手架 + notebook 原型 | 已落库 `measurements/wgfmu/`，但真实库未接 |
-| 整体状态 | 阶段性可开发 | 不标记 READY |
+| 真机验证 | 在 yhzang 测试机执行并回流 CSV/日志 | 项目3记录命令/结果，项目4归档实测数据 |
+| WGFMU | 正式模块 + stop-gated 真机流程 | 有 `RealWgfmuBackend`、`scripts/wgfmu_next_round_minimal.py`、`tests/test_wgfmu_iv_and_wakeup.py` |
+| 整体状态 | 可继续增量整理 / 上机 / 数据回流 | 不用无边界 READY 表述 |
 
 ---
 
 ## 进一步的测试建议
 
 1. 在连接 B1500 的另一台电脑上执行 `scripts/verify_dc_sweep.py --real`，把真机结果与本仓库文档分开记录。
-2. 如果 WGFMU 要继续扩展，先在现有 `src/fefetlab/measurements/wgfmu/` 脚手架上增加真实 backend，而不是重新起一套并行结构。
+2. 如果 WGFMU 要继续扩展，沿现有 `src/fefetlab/measurements/wgfmu/` 和 `scripts/wgfmu_next_round_minimal.py` 增量加阶段；不要重新起一套并行结构。
 3. 只有当 `scripts/batch_sweep.py`、协议层代码真实落库后，再把它们写回 README / 完成总结。
 
 ---

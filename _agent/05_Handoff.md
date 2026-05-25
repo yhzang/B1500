@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-05-26 01:33 CST → B1500_VISA_ADDR override 真机验证已过，待 commit/pull 同步
+
+**改动**：`scripts/wgfmu_next_round_minimal.py` live backend 初始化时优先读 `B1500_VISA_ADDR`；有值则直接使用并打印 `B1500_VISA_ADDR_OVERRIDE`，无值才 `autodetect_visa_addr("B1500")`。
+
+**真机验证**（`D:\test\B1500`）：
+1. 覆盖前远端备份：`D:\test\B1500\_agent\remote_backup_before_hermes_test_20260526_012839\`。
+2. `pytest tests/test_wgfmu_iv_and_wakeup.py tests/test_wgfmu_scaffold.py -q` → **13 passed in 5.73s**。
+3. `--stage PLAN` → `REPORT_CODE: PLAN_ONLY_NO_HARDWARE`。
+4. `--stage ALL_DRY --s0-reps 1 --s1-reps 1 --e1-reps 1 --e2-reps 1 --e3-reps 1 --e4-reps 1 --e5-reps 1 --cycle-count 1` → `DRY_RUN_AUDIT: execute_count=96 max_vectors_seen=640`。
+5. live override smoke：`set B1500_VISA_ADDR=GPIB1::17::INSTR && ... --stage S0 --live --confirm S0 --device-id ENV_OVERRIDE_TEST --geometry OPEN --s0-reps 1` → `B1500_VISA_ADDR_OVERRIDE: GPIB1::17::INSTR`，`WGFMU_CHANNELS: [201, 202, 301, 302]`，`REPORT_CODE: S0_DONE_PROCEED_TO_S1_IF_PROBES_ON_DEVICE`，CSV `D:\test\B1500\runs\20260526_012948_S0_open_fixture_smoke_ENV_OVERRIDE_TEST\s0_open_fixture_smoke.csv`。
+
+**下一步**：本地 commit + push，然后真机 `git pull origin main`，确认 clean/同 SHA。
+
+---
+
 ---
 
 ## 2026-05-22 18:58 CST → L40W10_02 stop-gated WGFMU 已跑完 S1/E1/E2 minimal

@@ -34,6 +34,7 @@ from fefetlab.measurements.wgfmu.experiments import (
     run_e1_single_point,
 )
 from fefetlab.measurements.wgfmu.setup_helpers import clear_b1500_status_for_wgfmu_open
+import fefetlab.measurements.wgfmu.real_backend as real_backend_module
 
 
 # ---------------------------------------------------------------- pulse builder
@@ -207,9 +208,11 @@ def test_real_backend_load_fails_gracefully_when_dll_missing(monkeypatch):
     """Calling .load() with no usable DLL must raise a clear OSError, not segfault.
 
     The B1500 test machine has a real system-level wgfmu.dll installed, so this
-    test must not rely on a physically missing DLL. Mock the loader instead.
+    test must not rely on a physically missing DLL. Mock the platform and loader
+    instead so the missing-DLL branch is exercised on both Linux CI and Windows.
     """
     monkeypatch.delenv("WGFMU_DLL_PATH", raising=False)
+    monkeypatch.setattr(real_backend_module.platform, "system", lambda: "Windows")
 
     def _missing_dll(_path):
         raise OSError("mock missing wgfmu.dll")

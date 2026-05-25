@@ -110,12 +110,14 @@ B1500/
 │   │   │   └── tests/
 │   │   │       └── __init__.py
 │   │   │
-│   │   ├── wgfmu/                             # WGFMU脚手架 ✅ 已落库（dummy backend + smoke workflow）
+│   │   ├── wgfmu/                             # WGFMU ✅ 已落库（dummy + real backend + E1/E2/E5/CYCLE）
 │   │   │   ├── __init__.py
-│   │   │   ├── config.py
-│   │   │   ├── backend.py
-│   │   │   ├── export.py
-│   │   │   ├── smoke.py
+│   │   │   ├── config.py / backend.py / export.py / smoke.py
+│   │   │   ├── real_backend.py                # ctypes 绑定 Keysight wgfmu.dll
+│   │   │   ├── setup_helpers.py               # dll/VISA/ERRX preflight helper
+│   │   │   ├── pulse_builder.py
+│   │   │   ├── iv_sweep.py / wakeup.py
+│   │   │   ├── experiments.py                 # E1 单点/真实实验 helper
 │   │   │   └── README.md
 │   │   │
 │   │   └── 其他测量模块                        # 其余模块待后续正式落库
@@ -135,10 +137,12 @@ B1500/
 
 当前仓库未提供 `scripts/batch_sweep.py`、`protocols/device_characterization.py`，但现在已经提供正式的 `src/fefetlab/measurements/wgfmu/` 脚手架模块。
 
-WGFMU 当前处于“双轨状态”：
-- `notebooks/12_wgfmu_smoke.ipynb` 仍是原型来源与 bring-up 参考
-- `src/fefetlab/measurements/wgfmu/` 已落库最小正式脚手架（config / backend / smoke / export）
-- 但真实官方库绑定与真机联调仍未完成
+WGFMU 当前处于“正式代码 + 真机验证已分阶段通过”状态：
+- `src/fefetlab/measurements/wgfmu/` 已包含 dummy backend、`RealWgfmuBackend`、波形构建、IV/wake-up runner、E1 单点 helper、ERRX preflight helper。
+- `scripts/wgfmu_next_round_minimal.py` 是当前 stop-gated 真机上机主入口，支持 S0/S1/E1/E2/E5/CYCLE 等阶段；live 模式必须一段一段确认。
+- `notebooks/30-34` 保留为交互式实验入口；CLI 优先用于避免 stale notebook cell。
+- yhzang 测试机实测资源串为 `GPIB1::17::INSTR`，但代码应优先用 `autodetect_visa_addr("B1500")` 或 `B1500_VISA_ADDR`，不要把 `GPIB0` 当固定真值。
+- `*CLS` 在 yhzang B1500A 上会入队 `+100`，WGFMU open 前必须用 `clear_b1500_status_for_wgfmu_open()` 的 `inst.clear()+ERRX? drain` 口径。
 
 测量导出时会在仓库根目录生成 `runs/` 目录，但该目录不一定预先存在于版本库中。
 
@@ -245,7 +249,7 @@ python scripts/verify_dc_sweep.py --real
 
 说明：
 - 仓库内文档只把第1类视为本地开发验证入口，不再预写“全部通过”的结论。
-- WGFMU 当前只有 notebook 原型，不适用 `measurements/wgfmu/` 模块级测试流程。
+- WGFMU 已有 `measurements/wgfmu/` 模块级测试；真机相关测试默认在 yhzang B1500 测试机 `D:\test\B1500` 执行，WSL 本地只做 import / dummy / dry-run 验证。
 
 ---
 
@@ -294,7 +298,7 @@ with VisaSession(visa_cfg) as session:
 ### ⏳ 待开发功能
 
 - [ ] **AC扫描** (measurements/ac/) - LCR电容测量
-- [ ] **WGFMU** (measurements/wgfmu/) - 脉冲/动态应力测量
+- [x] **WGFMU** (`measurements/wgfmu/`) - B1530A real backend、波形构建、stop-gated E1/E2/E5/CYCLE 上机脚本
 - [ ] **Capacitance** (measurements/capacitance/) - 电容-电压特性
 - [ ] **Leakage** (measurements/leakage/) - 漏电流自动筛选
 - [ ] **Protocol Layer** - 完整的器件表征协议

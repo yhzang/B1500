@@ -18,6 +18,7 @@ import argparse
 import csv
 import datetime as _dt
 import math
+import os
 import random
 import sys
 import time
@@ -287,7 +288,11 @@ def make_backend(live: bool):
 
     dll = ensure_wgfmu_dll_path()
     print(f"WGFMU_DLL: {dll}")
-    visa_addr = autodetect_visa_addr("B1500")
+    visa_addr = (os.environ.get("B1500_VISA_ADDR") or "").strip()
+    if visa_addr:
+        print(f"B1500_VISA_ADDR_OVERRIDE: {visa_addr}")
+    else:
+        visa_addr = autodetect_visa_addr("B1500")
     print(f"B1500_VISA: {visa_addr}")
     backend = RealWgfmuBackend()
     backend.load()

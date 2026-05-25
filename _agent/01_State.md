@@ -1,7 +1,19 @@
 # 当前状态
 
-- 更新时间：2026-05-22 18:58 CST
-- 当前目标：**L40W10_02 已完成 S1 / 低压 VOLTAGE_ECHO / E1 QUICK300ms v2 / E2 minimal；下一步做数据判读收口，不立刻扩大 E3**
+- 更新时间：2026-05-26 01:33 CST
+- 当前目标：**B1500 stop-gated CLI 已补 `B1500_VISA_ADDR` override；真实测试机已通过 pytest / PLAN / ALL_DRY / S0 live override smoke，准备提交并同步真机 pull。**
+
+## 2026-05-26 B1500_VISA_ADDR override 已验证
+
+- `scripts/wgfmu_next_round_minimal.py` live backend 初始化逻辑：优先读取 `B1500_VISA_ADDR`；非空则直接使用并打印 `B1500_VISA_ADDR_OVERRIDE`，否则回退自动探测。
+- 真机验证位置：`ssh Administrator@100.108.189.9` → `D:\test\B1500`。
+- 真机测试结果：
+  - `pytest tests/test_wgfmu_iv_and_wakeup.py tests/test_wgfmu_scaffold.py -q` → **13 passed in 5.73s**。
+  - `--stage PLAN` → `REPORT_CODE: PLAN_ONLY_NO_HARDWARE`。
+  - `--stage ALL_DRY ... --cycle-count 1` → `DRY_RUN_AUDIT: execute_count=96 max_vectors_seen=640`。
+  - `set B1500_VISA_ADDR=GPIB1::17::INSTR && ... --stage S0 --live --confirm S0 --device-id ENV_OVERRIDE_TEST --geometry OPEN --s0-reps 1` → `B1500_VISA_ADDR_OVERRIDE: GPIB1::17::INSTR`、`WGFMU_CHANNELS: [201, 202, 301, 302]`、`REPORT_CODE: S0_DONE_PROCEED_TO_S1_IF_PROBES_ON_DEVICE`。
+- 真机覆盖前备份：`D:\test\B1500\_agent\remote_backup_before_hermes_test_20260526_012839\`。
+- 下一步：本地 commit/push 后，真机 `git pull origin main` 同步。
 
 
 ## 2026-05-22 下一轮 stop-gated WGFMU 上机流程已落地

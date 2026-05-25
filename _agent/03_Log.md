@@ -80,6 +80,20 @@
 
 # 工作日志
 
+## 2026-05-26 01:33 CST B1500_VISA_ADDR override + 真机验证
+- Goal：补完 `scripts/wgfmu_next_round_minimal.py` 的 `B1500_VISA_ADDR` 环境变量 override，并在真实测试机 `D:\test\B1500` 上验证后再提交。
+- What changed：
+  - `scripts/wgfmu_next_round_minimal.py` live backend 初始化时先读 `B1500_VISA_ADDR`；若非空则使用该 VISA resource 并打印 `B1500_VISA_ADDR_OVERRIDE`，否则回退 `autodetect_visa_addr("B1500")`。
+  - 该改动保持 dry-run 完全硬件无关，不影响 `PLAN/ALL_DRY`。
+- Evidence：
+  - 本机：`python3 -m py_compile scripts/wgfmu_next_round_minimal.py` 通过。
+  - 真机同步前已把远端 12 个待覆盖文件备份到 `D:\test\B1500\_agent\remote_backup_before_hermes_test_20260526_012839\`。
+  - 真机：`.venv\Scripts\python.exe -m pytest tests/test_wgfmu_iv_and_wakeup.py tests/test_wgfmu_scaffold.py -q` → **13 passed in 5.73s**。
+  - 真机：`--stage PLAN` → `REPORT_CODE: PLAN_ONLY_NO_HARDWARE`。
+  - 真机：`--stage ALL_DRY --s0-reps 1 --s1-reps 1 --e1-reps 1 --e2-reps 1 --e3-reps 1 --e4-reps 1 --e5-reps 1 --cycle-count 1` → `DRY_RUN_AUDIT: execute_count=96 max_vectors_seen=640`。
+  - 真机 live override smoke：`set B1500_VISA_ADDR=GPIB1::17::INSTR && ... --stage S0 --live --confirm S0 --device-id ENV_OVERRIDE_TEST --geometry OPEN --s0-reps 1` → 输出 `B1500_VISA_ADDR_OVERRIDE: GPIB1::17::INSTR`，通道 `[201,202,301,302]`，`REPORT_CODE: S0_DONE_PROCEED_TO_S1_IF_PROBES_ON_DEVICE`，CSV `D:\test\B1500\runs\20260526_012948_S0_open_fixture_smoke_ENV_OVERRIDE_TEST\s0_open_fixture_smoke.csv`。
+- Next step：本地 commit + push 后，让真机 `git pull origin main`，确认 clean/同 SHA。
+
 ## 2026-05-22 00:55 CST WGFMU openSession=-6 事故收口 + E1-E5 preflight 固化
 - Goal：收口 E1 QUICK300ms / E1-E5 真机 notebook 的 `WGFMU_openSession status=-6`，同时清掉旧 Gate/Drain 反接口径和 `*RST` preflight 风险。
 - Root cause：异常中断/上一轮 notebook 后，B1500 GPIB error queue 与 VISA/GPIB 资源状态残留；WGFMU DLL `openSession` 在旧状态下返回 -6。不是 DLL 位数、不是通道不存在。
