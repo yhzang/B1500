@@ -21,6 +21,7 @@ Builders / helpers:
     :func:`linear_voltage_segments` — declarative pulse-train construction.
 """
 
+from .audit_backend import AuditBackend
 from .backend import DummyWgfmuBackend, WgfmuBackend
 from .config import MeasureEventParams, PulsePatternParams, WgfmuSmokeConfig
 from .export import WgfmuDataExporter
@@ -59,6 +60,7 @@ def list_wgfmu_scaffold_features() -> dict[str, list[str]]:
         "backend": [
             "abstract_backend_interface",
             "dummy_backend_for_local_development",
+            "audit_backend_for_hardware_free_dry_run",
             "real_backend_ctypes_binding",
             "notebook_compatibility_aliases",
         ],
@@ -93,6 +95,7 @@ __all__ = [
     "WgfmuSmokeConfig",
     "WgfmuBackend",
     "DummyWgfmuBackend",
+    "AuditBackend",
     "RealWgfmuBackend",
     "WgfmuLibraryError",
     "WgfmuLib",

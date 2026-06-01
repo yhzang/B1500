@@ -7,6 +7,8 @@ Stages:
   E1: RAWD QUICK300ms v2, ±5 V / 100 us write, delay to 300 ms
   E2: minimal read-disturb, A1/A100/C1/C10 only, skips C100
   E5: read-window visibility grid, Vg×Vd grid after write, two delays
+  E6D: half-Vdd/opposite-polarity disturb-delay, read short-window shift
+  CYCLE: checkpointed endurance stress, read MW only at selected cycle counts
 
 Default mode is dry-run with an in-process audit backend. Dry-run never opens
 VISA, never loads wgfmu.dll, and never drives hardware outputs. Live mode must
@@ -15,14 +17,11 @@ be requested one stage at a time using --live --confirm <STAGE>.
 from __future__ import annotations
 
 import argparse
-import csv
 import datetime as _dt
-import math
 import os
 import random
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
@@ -32,10 +31,31 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-GATE_CH = 202   # hardcoded: yhzang wiring, do not autodetect
-DRAIN_CH = 201  # hardcoded: yhzang wiring, do not autodetect
-ALLOWED_CHANNELS = {201, 202, 301}
-FORBIDDEN_CHANNELS = {302}
+from fefetlab.measurements.wgfmu.audit_backend import AuditBackend  # noqa: E402
+from fefetlab.orchestration import (  # noqa: E402 - ROOT/src is inserted just above
+    ExperimentContext,
+    StageSpec,
+    StageSummary,
+    StopGate,
+    StopGatePolicy,
+    make_stage_dir,
+    summarize_rows,
+    validate_live_request,
+    write_manifest_yaml,
+    write_report_code,
+    write_rows_csv,
+    write_summary_md,
+)
+
+DEFAULT_GATE_CH = 202   # yhzang default wiring; CLI can override for other fixtures
+DEFAULT_DRAIN_CH = 201  # yhzang default wiring; CLI can override for other fixtures
+DEFAULT_ALLOWED_CHANNELS = {201, 202, 301}
+DEFAULT_FORBIDDEN_CHANNELS = {302}
+
+GATE_CH = DEFAULT_GATE_CH
+DRAIN_CH = DEFAULT_DRAIN_CH
+ALLOWED_CHANNELS = set(DEFAULT_ALLOWED_CHANNELS)
+FORBIDDEN_CHANNELS = set(DEFAULT_FORBIDDEN_CHANNELS)
 
 VG_READS = [-0.2, 0.0, 0.2]
 VD_READ = 0.05
@@ -66,213 +86,162 @@ VG_E5 = [-1.0, -0.7, -0.4, -0.2, 0.0, 0.2]
 VD_E5 = [0.01, 0.05, 0.10, 0.50]
 DELAYS_E5 = [10e-6, 1.0]
 VG_CYCLE = [-1.0, -0.7, -0.4]
+DISTURB_VG_READS = [-1.0, -0.7, -0.4]
+DISTURB_AMPS_DEFAULT = [2.5]
+DISTURB_DELAYS_DEFAULT = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]
+DISTURB_WIDTH = 100e-6
+DISTURB_NEUTRAL_WAIT = 10e-6
 CYCLE_DELAY = 10e-6
+CYCLE_CHECKPOINTS_DEFAULT = [10, 100, 500, 1000, 5000, 10000, 100000]
+CYCLE_STRESS_VECTOR_GUARD = 128
 
 FIELDNAMES = [
     "timestamp_iso", "stage", "device_id", "geometry", "sequence_id", "repeat_index",
     "state_target", "delay_s", "dose_mode", "n_read", "Vg_read_V", "Vd_read_V",
-    "Id_mean_A", "Id_std_A", "Ig_mean_A", "Ig_std_A", "n_d", "n_g", "note",
+    "Id_mean_A", "Id_std_A", "Ig_mean_A", "Ig_std_A", "n_d", "n_g",
+    "initial_state", "V_disturb_V", "t_disturb_s", "delay_after_disturb_s",
+    "reference_or_disturbed", "note",
 ]
 
 
-class StopGate(RuntimeError):
-    """Raised when a live run must stop before the next stage/shot."""
-
-    def __init__(self, code: str, message: str):
-        self.code = code
-        super().__init__(message)
+def _parse_int_csv(value: str) -> set[int]:
+    if value is None or str(value).strip() == "":
+        return set()
+    return {int(part.strip()) for part in str(value).split(",") if part.strip()}
 
 
-@dataclass
-class StageSummary:
-    stage: str
-    out_csv: Path
-    rows: int
-    max_abs_id_a: float
-    max_abs_ig_a: float
-    report_code: str
+def _parse_int_list_csv(value: str) -> list[int]:
+    if value is None or str(value).strip() == "":
+        return []
+    out: list[int] = []
+    for part in str(value).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        n = int(part)
+        if n <= 0:
+            raise ValueError(f"cycle checkpoints must be positive, got {n}")
+        out.append(n)
+    return sorted(set(out))
 
 
-def _now_tag() -> str:
-    return _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+def _parse_float_list_csv(value: str) -> list[float]:
+    if value is None or str(value).strip() == "":
+        return []
+    out: list[float] = []
+    for part in str(value).split(","):
+        part = part.strip()
+        if part:
+            out.append(float(part))
+    return sorted(set(out))
 
 
-def _slug(s: str) -> str:
-    keep = []
-    for ch in str(s):
-        keep.append(ch if ch.isalnum() or ch in ("-", "_") else "_")
-    out = "".join(keep).strip("_")
-    return out or "device"
+def configure_channel_map(args) -> None:
+    """Apply fixture-specific WGFMU channel routing from CLI args.
+
+    Defaults match yhzang's current B1500 wiring, but a reusable system must make
+    Gate/Drain/forbidden channels selectable per fixture/device setup.
+    """
+
+    global GATE_CH, DRAIN_CH, ALLOWED_CHANNELS, FORBIDDEN_CHANNELS
+    gate = int(args.gate_ch)
+    drain = int(args.drain_ch)
+    allowed = _parse_int_csv(args.allowed_channels)
+    forbidden = _parse_int_csv(args.forbidden_channels)
+    if gate == drain:
+        raise StopGate("SETUP_STOP_BAD_CHANNEL_MAP", "Gate and Drain channels must be different.")
+    if gate in forbidden or drain in forbidden:
+        raise StopGate(
+            "SETUP_STOP_BAD_CHANNEL_MAP",
+            f"selected Gate/Drain includes forbidden channel: gate={gate}, drain={drain}, forbidden={sorted(forbidden)}",
+        )
+    if allowed and (gate not in allowed or drain not in allowed):
+        raise StopGate(
+            "SETUP_STOP_BAD_CHANNEL_MAP",
+            f"selected Gate/Drain must be in allowed set: gate={gate}, drain={drain}, allowed={sorted(allowed)}",
+        )
+    GATE_CH = gate
+    DRAIN_CH = drain
+    ALLOWED_CHANNELS = allowed
+    FORBIDDEN_CHANNELS = forbidden
 
 
+def _device_family(device_id: str, geometry: str) -> str:
+    for source in (geometry, device_id):
+        text = str(source).upper()
+        for prefix in ("L10", "L20", "L40"):
+            if text.startswith(prefix) or f"_{prefix}" in text:
+                return prefix
+    return "unknown"
+
+
+def _channel_manifest() -> dict:
+    return {
+        "gate": GATE_CH,
+        "drain": DRAIN_CH,
+        "allowed": sorted(ALLOWED_CHANNELS),
+        "forbidden": sorted(FORBIDDEN_CHANNELS),
+    }
+
+
+def _build_manifest(args, *, stage: str, stage_label: str, out_csv: Path, report_code: str, resource: str) -> dict:
+    return {
+        "stage": stage,
+        "stage_label": stage_label,
+        "device_id": args.device_id,
+        "geometry": args.geometry,
+        "device_family": _device_family(args.device_id, args.geometry),
+        "live": bool(args.live),
+        "plan_mode_equivalent": not bool(args.live),
+        "seed": args.seed,
+        "channels": _channel_manifest(),
+        "stop_gates_uA": {
+            "S0": args.s0_ig_stop_uA,
+            "S1": args.s1_ig_stop_uA,
+            "E1": args.e1_ig_stop_uA,
+            "E2": args.e2_ig_stop_uA,
+            "E3": args.e3_ig_stop_uA,
+            "E4": args.e4_ig_stop_uA,
+            "E5": args.e5_ig_stop_uA,
+            "E6D": args.e6d_ig_stop_uA,
+            "CYCLE": args.cycle_ig_stop_uA,
+        },
+        "wgfmu_defaults": {
+            "vg_reads": VG_READS,
+            "vd_read": VD_READ,
+            "vg_e5": VG_E5,
+            "vd_e5": VD_E5,
+            "delays_quick300": DELAYS_QUICK300,
+            "delays_full": DELAYS_FULL if args.e1_full_delays else [],
+            "e1_wide_vg": bool(args.e1_wide_vg),
+            "e1_full_delays": bool(args.e1_full_delays),
+            "disturb_amps_abs": _parse_float_list_csv(args.e6d_amps),
+            "disturb_delays": _parse_float_list_csv(args.e6d_delays),
+            "disturb_width_s": args.e6d_width_s,
+        },
+        "backend_resource": resource,
+        "output_csv": str(out_csv),
+        "report_code": report_code,
+        "command_args": list(getattr(args, "_argv", sys.argv[1:])),
+    }
 # ---------------------------------------------------------------------------
-# Dry-run audit backend. It implements the subset used below and records enough
-# state to catch vector-budget, timing, and zero/negative-dt mistakes.
-class AuditBackend:
-    def __init__(self):
-        self.session_opened = False
-        self._channels = [201, 202, 301, 302]
-        self._patterns: dict[str, dict] = {}
-        self._events: dict[str, dict] = {}
-        self._sequences: list[dict] = []
-        self._connected: set[int] = set()
-        self._last_values: dict[int, pd.DataFrame] = {}
-        self.execute_count = 0
-        self.max_vectors_seen = 0
-        self.timeout_s = None
-
-    def open_session(self, resource: str):
-        self.session_opened = True
-        return 0
-
-    def close_session(self):
-        self.session_opened = False
-        return 0
-
-    def load(self):
-        return None
-
-    def initialize(self):
-        return 0
-
-    def clear(self):
-        self._patterns.clear()
-        self._events.clear()
-        self._sequences.clear()
-        self._last_values.clear()
-        return 0
-
-    def set_timeout(self, timeout_s: float):
-        self.timeout_s = float(timeout_s)
-        return 0
-
-    def get_channel_ids(self) -> list[int]:
-        return list(self._channels)
-
-    def get_error_summary(self) -> str:
-        return ""
-
-    def get_warning_summary(self) -> str:
-        return ""
-
-    def treat_warnings_as_errors(self, level: str):
-        return 0
-
-    def create_pattern(self, pattern: str, init_v: float):
-        self._patterns[pattern] = {"init_v": float(init_v), "vectors": []}
-        return 0
-
-    def add_vector(self, pattern: str, dtime_s: float, voltage: float):
-        if dtime_s <= 0:
-            raise ValueError(f"non-positive dtime in {pattern}: {dtime_s}")
-        self._patterns.setdefault(pattern, {"init_v": 0.0, "vectors": []})
-        self._patterns[pattern]["vectors"].append((float(dtime_s), float(voltage)))
-        return 0
-
-    def set_measure_event(self, pattern: str, event: str, time_s: float, points: int,
-                          interval_s: float, average_s: float, raw_data_mode: str):
-        if points <= 0 or interval_s <= 0 or average_s <= 0:
-            raise ValueError(f"bad measure event {event}: points={points}, interval={interval_s}, average={average_s}")
-        if average_s >= interval_s:
-            raise ValueError(f"average_s must be < interval_s for {event}")
-        self._events[event] = {
-            "pattern": pattern,
-            "time_s": float(time_s),
-            "points": int(points),
-            "interval_s": float(interval_s),
-            "average_s": float(average_s),
-            "raw_data_mode": raw_data_mode,
-        }
-        return 0
-
-    def add_sequence(self, chan_id: int, pattern: str, count: int):
-        self._sequences.append({"chan_id": int(chan_id), "pattern": pattern, "count": int(count)})
-        return 0
-
-    def export_ascii(self, filepath: str):
-        return 0
-
-    def set_operation_mode(self, chan_id: int, mode: str):
-        return 0
-
-    def set_force_voltage_range(self, chan_id: int, rng: str):
-        return 0
-
-    def set_measure_enabled(self, chan_id: int, enabled: bool):
-        return 0
-
-    def set_measure_mode(self, chan_id: int, mode: str):
-        return 0
-
-    def set_measure_current_range(self, chan_id: int, rng: str):
-        return 0
-
-    def set_measure_voltage_range(self, chan_id: int, rng: str):
-        return 0
-
-    def connect(self, chan_id: int):
-        self._connected.add(int(chan_id))
-        return 0
-
-    def disconnect(self, chan_id: int):
-        self._connected.discard(int(chan_id))
-        return 0
-
-    def _pattern_duration(self, name: str) -> float:
-        return sum(dt for dt, _v in self._patterns.get(name, {}).get("vectors", []))
-
-    def execute(self):
-        self.execute_count += 1
-        if len(self._sequences) != 2:
-            raise RuntimeError(f"expected 2 synchronized sequences, got {self._sequences}")
-        durations = [self._pattern_duration(seq["pattern"]) for seq in self._sequences]
-        if not math.isclose(durations[0], durations[1], rel_tol=0, abs_tol=2e-12):
-            raise RuntimeError(f"gate/drain duration mismatch: {durations}")
-        for name, payload in self._patterns.items():
-            n_vec = len(payload.get("vectors", []))
-            self.max_vectors_seen = max(self.max_vectors_seen, n_vec)
-            if n_vec > 2048:
-                raise RuntimeError(f"pattern {name} has {n_vec} vectors > 2048")
-        self._last_values.clear()
-        for seq in self._sequences:
-            ch = int(seq["chan_id"])
-            pat = seq["pattern"]
-            rows = []
-            base = 8e-9 if ch == DRAIN_CH else 2e-7
-            for ev in sorted(self._events.values(), key=lambda e: e["time_s"]):
-                if ev["pattern"] != pat:
-                    continue
-                for k in range(ev["points"]):
-                    t = ev["time_s"] + k * ev["interval_s"]
-                    val = base + (k + 1) * (1e-10 if ch == DRAIN_CH else 2e-9)
-                    rows.append({"time_s": t, "value": val})
-            self._last_values[ch] = pd.DataFrame(rows, columns=["time_s", "value"])
-        return 0
-
-    def wait_until_completed(self):
-        return 0
-
-    def get_measure_value_size(self, chan_id: int) -> tuple[int, int]:
-        n = len(self._last_values.get(int(chan_id), pd.DataFrame()))
-        return n, n
-
-    def get_measure_values(self, chan_id: int) -> pd.DataFrame:
-        return self._last_values.get(int(chan_id), pd.DataFrame(columns=["time_s", "value"])).copy()
-
-
+# Dry-run audit backend lives in fefetlab.measurements.wgfmu.audit_backend.
 # ---------------------------------------------------------------------------
 def _validate_channels(channel_ids: Iterable[int]) -> None:
     ids = set(int(x) for x in channel_ids)
     if GATE_CH not in ids or DRAIN_CH not in ids:
         raise StopGate("SETUP_STOP_CHANNEL_MISSING", f"Gate={GATE_CH}, Drain={DRAIN_CH}, detected={sorted(ids)}")
-    bad = [ch for ch in (GATE_CH, DRAIN_CH) if ch in FORBIDDEN_CHANNELS or ch not in ALLOWED_CHANNELS]
+    bad = [
+        ch for ch in (GATE_CH, DRAIN_CH)
+        if ch in FORBIDDEN_CHANNELS or (ALLOWED_CHANNELS and ch not in ALLOWED_CHANNELS)
+    ]
     if bad:
         raise StopGate("SETUP_STOP_BAD_CHANNEL", f"bad channel(s): {bad}")
 
 
 def make_backend(live: bool):
     if not live:
-        b = AuditBackend()
+        b = AuditBackend(gate_ch=GATE_CH, drain_ch=DRAIN_CH, channels=[201, 202, 301, 302])
         b.open_session("DUMMY::WGFMU")
         _validate_channels(b.get_channel_ids())
         print("DRY_RUN_BACKEND: no VISA, no DLL, no hardware output")
@@ -458,6 +427,59 @@ def run_e1_shot(backend, *, state: str, delay_s: float, vg_reads: list[float] = 
     return _summarize_windows(g_df, d_df, windows)
 
 
+def run_disturb_delay_shot(
+    backend,
+    *,
+    initial_state: str,
+    v_disturb: float,
+    t_disturb_s: float,
+    delay_after_disturb_s: float,
+    vg_reads: list[float] = DISTURB_VG_READS,
+    vd_read: float = VD_READ,
+    n_pts: int = N_PTS,
+) -> list[dict]:
+    """Set ERS/PGM, apply an opposite small disturb pulse, then read after delay."""
+    v_initial = V_ERS if initial_state == "ERS" else V_PGM
+    backend.clear()
+    backend.create_pattern("gp", 0.0)
+    backend.create_pattern("dp", 0.0)
+
+    t_prefix = 0.0
+    for dt, vg in [
+        (T_RESET, 0.0),
+        (T_RF, v_initial),
+        (T_WRITE, v_initial),
+        (T_RF, 0.0),
+        (DISTURB_NEUTRAL_WAIT, 0.0),
+        (T_RF, v_disturb),
+        (t_disturb_s, v_disturb),
+        (T_RF, 0.0),
+    ]:
+        backend.add_vector("gp", dt, float(vg))
+        backend.add_vector("dp", dt, 0.0)
+        t_prefix += dt
+    if delay_after_disturb_s > 0:
+        backend.add_vector("gp", delay_after_disturb_s, 0.0)
+        backend.add_vector("dp", delay_after_disturb_s, 0.0)
+        t_prefix += delay_after_disturb_s
+
+    windows = _build_read_phase(
+        backend,
+        vg_reads=vg_reads,
+        vd_read=vd_read,
+        t_prefix=0.0,
+        n_pts=n_pts,
+        event_offset_s=t_prefix,
+    )
+    timeout_s = max(30.0, delay_after_disturb_s * 3 + t_disturb_s * 3 + 10.0)
+    g_df, d_df = _configure_and_run_phase(backend, measure=True, timeout_s=timeout_s)
+    return _summarize_windows(g_df, d_df, windows)
+
+
+def _opposite_disturb_voltage(initial_state: str, amp_abs: float) -> float:
+    return -abs(float(amp_abs)) if initial_state == "ERS" else abs(float(amp_abs))
+
+
 # ---------------------------------------------------------------------------
 # E2 helpers: copied in minimized form from the split-dose notebook logic.
 WGFMU_MAX_VECTORS_PER_PATTERN = 2048
@@ -520,6 +542,54 @@ def _run_reset_write_phase(backend, *, state: str):
     _configure_and_run_phase(backend, measure=False, timeout_s=30.0)
 
 
+def _add_stress_write_vectors(backend, *, state: str) -> float:
+    """Append one reset+write pulse for a cycle-stress phase, no readout."""
+    v_write = V_ERS if state == "ERS" else V_PGM
+    total = 0.0
+    for dt, vg in [(T_RESET, 0.0), (T_RF, v_write), (T_WRITE, v_write), (T_RF, 0.0)]:
+        backend.add_vector("gp", dt, vg)
+        backend.add_vector("dp", dt, 0.0)
+        total += dt
+    return total
+
+
+def _cycle_stress_vectors_per_cycle() -> int:
+    # Two states per cycle (ERS then PGM), each state uses reset + rise + hold + fall.
+    return 8
+
+
+def _max_cycle_stress_chunk() -> int:
+    budget = WGFMU_MAX_VECTORS_PER_PATTERN - CYCLE_STRESS_VECTOR_GUARD
+    return max(1, budget // _cycle_stress_vectors_per_cycle())
+
+
+def _run_cycle_stress_chunk(backend, *, n_cycles: int) -> None:
+    if n_cycles <= 0:
+        return
+    backend.clear()
+    backend.create_pattern("gp", 0.0)
+    backend.create_pattern("dp", 0.0)
+    t_total = 0.0
+    for _ in range(int(n_cycles)):
+        t_total += _add_stress_write_vectors(backend, state="ERS")
+        t_total += _add_stress_write_vectors(backend, state="PGM")
+    timeout_s = max(30.0, t_total * 3 + 10.0)
+    _configure_and_run_phase(backend, measure=False, timeout_s=timeout_s)
+
+
+def _run_cycle_stress_to_checkpoint(backend, *, current_cycle: int, target_cycle: int) -> int:
+    remaining = int(target_cycle) - int(current_cycle)
+    if remaining < 0:
+        raise ValueError(f"checkpoint order regressed: current={current_cycle}, target={target_cycle}")
+    max_chunk = _max_cycle_stress_chunk()
+    while remaining > 0:
+        chunk = min(max_chunk, remaining)
+        _run_cycle_stress_chunk(backend, n_cycles=chunk)
+        current_cycle += chunk
+        remaining -= chunk
+    return current_cycle
+
+
 def _run_dose_chunk_phase(backend, *, mode: str, n_chunk: int, vd_read: float):
     backend.clear()
     backend.create_pattern("gp", 0.0)
@@ -544,32 +614,37 @@ def run_e2_shot(backend, *, state: str, mode: str, n_read: int,
 
 # ---------------------------------------------------------------------------
 def _write_rows(path: Path, rows: list[dict]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({k: row.get(k, "") for k in FIELDNAMES})
+    write_rows_csv(path, rows, FIELDNAMES)
 
 
 def _stage_dir(args, stage: str) -> Path:
-    device = _slug(args.device_id)
-    if args.live:
-        base = ROOT / "runs"
-        return base / f"{_now_tag()}_{stage}_{device}"
-    return ROOT / "_agent" / "dryrun_audit" / f"{_now_tag()}_{stage}_{device}"
+    ctx = ExperimentContext(
+        root=ROOT,
+        device_id=args.device_id,
+        geometry=args.geometry,
+        live=args.live,
+        seed=args.seed,
+    )
+    return make_stage_dir(ctx, stage)
 
 
-def _summarize(stage: str, out_csv: Path, rows: list[dict], code: str) -> StageSummary:
-    if not rows:
-        max_id = max_ig = float("nan")
-    else:
-        max_id = max(abs(float(r.get("Id_mean_A", 0.0))) for r in rows if not pd.isna(r.get("Id_mean_A", float("nan"))))
-        max_ig = max(abs(float(r.get("Ig_mean_A", 0.0))) for r in rows if not pd.isna(r.get("Ig_mean_A", float("nan"))))
-    print(f"REPORT_CODE: {code}")
-    print(f"STAGE_SUMMARY: stage={stage} rows={len(rows)} max_abs_Id_A={max_id:.6e} max_abs_Ig_A={max_ig:.6e}")
-    print(f"OUTPUT_CSV: {out_csv}")
-    return StageSummary(stage, out_csv, len(rows), max_id, max_ig, code)
+def _summarize(args, stage: str, out_csv: Path, rows: list[dict], code: str) -> StageSummary:
+    summary = summarize_rows(stage, out_csv, rows, code)
+    spec = STAGE_REGISTRY.get(stage)
+    stage_label = spec.output_label if spec is not None else out_csv.parent.name
+    manifest = _build_manifest(
+        args,
+        stage=stage,
+        stage_label=stage_label,
+        out_csv=out_csv,
+        report_code=code,
+        resource=getattr(args, "_backend_resource", ""),
+    )
+    manifest_path = write_manifest_yaml(out_csv.parent, manifest)
+    write_report_code(out_csv.parent, summary)
+    write_summary_md(out_csv.parent, summary, manifest_path=manifest_path)
+    print(f"MANIFEST: {manifest_path}")
+    return summary
 
 
 def _check_samples(rows: list[dict], stage: str) -> None:
@@ -579,11 +654,11 @@ def _check_samples(rows: list[dict], stage: str) -> None:
 
 
 def _check_ig(rows: list[dict], stage: str, threshold_uA: float) -> None:
-    vals = [abs(float(r.get("Ig_mean_A", float("nan")))) for r in rows]
-    vals = [v for v in vals if not math.isnan(v)]
-    max_ig = max(vals) if vals else float("nan")
-    if vals and max_ig > threshold_uA * 1e-6:
-        raise StopGate(f"{stage}_STOP_IG_GT_{threshold_uA:g}UA", f"max |Ig|={max_ig:.3e} A > {threshold_uA:g} uA")
+    StopGatePolicy(
+        metric="Ig_mean_A",
+        threshold=threshold_uA * 1e-6,
+        threshold_label=f"{threshold_uA:g}UA",
+    ).check(rows, stage)
 
 
 def run_stage_s0(backend, args) -> StageSummary:
@@ -605,7 +680,7 @@ def run_stage_s0(backend, args) -> StageSummary:
     _check_ig(rows, "S0", args.s0_ig_stop_uA)
     out_csv = out_dir / "s0_open_fixture_smoke.csv"
     _write_rows(out_csv, rows)
-    return _summarize("S0", out_csv, rows, "S0_DONE_PROCEED_TO_S1_IF_PROBES_ON_DEVICE")
+    return _summarize(args, "S0", out_csv, rows, "S0_DONE_PROCEED_TO_S1_IF_PROBES_ON_DEVICE")
 
 
 def run_stage_s1(backend, args) -> StageSummary:
@@ -627,7 +702,7 @@ def run_stage_s1(backend, args) -> StageSummary:
     _check_ig(rows, "S1", args.s1_ig_stop_uA)
     out_csv = out_dir / "s1_device_read_only_baseline.csv"
     _write_rows(out_csv, rows)
-    return _summarize("S1", out_csv, rows, "S1_DONE_PROCEED_TO_E1")
+    return _summarize(args, "S1", out_csv, rows, "S1_DONE_PROCEED_TO_E1")
 
 
 def run_stage_e1(backend, args) -> StageSummary:
@@ -658,7 +733,7 @@ def run_stage_e1(backend, args) -> StageSummary:
                 seq += 1
     out_csv = out_dir / "e1_rawd_quick300ms_v2.csv"
     _write_rows(out_csv, rows)
-    return _summarize("E1", out_csv, rows, "E1_DONE_PROCEED_TO_E2_MINIMAL_IF_TREND_HEALTHY")
+    return _summarize(args, "E1", out_csv, rows, "E1_DONE_PROCEED_TO_E2_MINIMAL_IF_TREND_HEALTHY")
 
 
 def run_stage_e2(backend, args) -> StageSummary:
@@ -682,7 +757,104 @@ def run_stage_e2(backend, args) -> StageSummary:
             seq += 1
     out_csv = out_dir / "e2_minimal_A1_A100_C1_C10.csv"
     _write_rows(out_csv, rows)
-    return _summarize("E2", out_csv, rows, "E2_MINIMAL_DONE")
+    return _summarize(args, "E2", out_csv, rows, "E2_MINIMAL_DONE")
+
+
+
+def run_stage_e6r(backend, args) -> StageSummary:
+    """E6R: no-disturb reference using same delays/Vg as E6D, for paired comparison."""
+    out_dir = _stage_dir(args, "E6R_no_disturb_reference")
+    delays = _parse_float_list_csv(args.e6d_delays) or list(DISTURB_DELAYS_DEFAULT)
+    vg_reads = VG_E5 if args.e6d_wide_vg else DISTURB_VG_READS
+    rows = []
+    seq = 0
+    rng = random.Random(args.seed + 16)
+    combos = [(s, d) for s in ["ERS", "PGM"] for d in delays]
+    reps = args.e6r_reps if hasattr(args, "e6r_reps") else args.e6d_reps
+    ig_stop = args.e6r_ig_stop_uA if hasattr(args, "e6r_ig_stop_uA") else args.e6d_ig_stop_uA
+    for rep in range(reps):
+        order = list(combos)
+        if args.e6d_randomize:
+            rng.shuffle(order)
+        for initial_state, delay_s in order:
+            # Use run_e1_shot: write ERS/PGM, then delay, then read — NO disturb
+            rr = run_e1_shot(
+                backend,
+                state=initial_state,
+                delay_s=delay_s,
+                vg_reads=vg_reads,
+                vd_read=VD_READ,
+                n_pts=N_PTS,
+            )
+            for r in rr:
+                rows.append({
+                    "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
+                    "stage": "E6R", "device_id": args.device_id, "geometry": args.geometry,
+                    "sequence_id": seq, "repeat_index": rep, "state_target": initial_state,
+                    "delay_s": delay_s, "dose_mode": "", "n_read": "",
+                    **r,
+                    "initial_state": initial_state,
+                    "V_disturb_V": "",
+                    "t_disturb_s": "",
+                    "delay_after_disturb_s": delay_s,
+                    "reference_or_disturbed": "reference",
+                    "note": f"no_disturb_reference_after_{initial_state}",
+                })
+            _check_samples(rows[-len(rr):], "E6R")
+            _check_ig(rows[-len(rr):], "E6R", ig_stop)
+            print(f"SHOT_OK: E6R rep={rep} initial={initial_state} delay_s={delay_s:g} seq={seq}")
+            seq += 1
+    out_csv = out_dir / "e6r_no_disturb_reference.csv"
+    _write_rows(out_csv, rows)
+    return _summarize(args, "E6R", out_csv, rows, "E6R_REFERENCE_DONE")
+
+def run_stage_e6d(backend, args) -> StageSummary:
+    """E6D: half-Vdd/opposite-polarity disturb-delay matrix."""
+    out_dir = _stage_dir(args, "E6D_halfVdd_disturb_delay")
+    amps = _parse_float_list_csv(args.e6d_amps) or list(DISTURB_AMPS_DEFAULT)
+    delays = _parse_float_list_csv(args.e6d_delays) or list(DISTURB_DELAYS_DEFAULT)
+    vg_reads = VG_E5 if args.e6d_wide_vg else DISTURB_VG_READS
+    rows = []
+    seq = 0
+    rng = random.Random(args.seed + 6)
+    combos = [(s, a, d) for s in ["ERS", "PGM"] for a in amps for d in delays]
+    for rep in range(args.e6d_reps):
+        order = list(combos)
+        if args.e6d_randomize:
+            rng.shuffle(order)
+        for initial_state, amp_abs, delay_s in order:
+            v_disturb = _opposite_disturb_voltage(initial_state, amp_abs)
+            rr = run_disturb_delay_shot(
+                backend,
+                initial_state=initial_state,
+                v_disturb=v_disturb,
+                t_disturb_s=args.e6d_width_s,
+                delay_after_disturb_s=delay_s,
+                vg_reads=vg_reads,
+                vd_read=VD_READ,
+                n_pts=N_PTS,
+            )
+            for r in rr:
+                rows.append({
+                    "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
+                    "stage": "E6D", "device_id": args.device_id, "geometry": args.geometry,
+                    "sequence_id": seq, "repeat_index": rep, "state_target": initial_state,
+                    "delay_s": delay_s, "dose_mode": f"disturb={v_disturb:+g}V", "n_read": "",
+                    **r,
+                    "initial_state": initial_state,
+                    "V_disturb_V": v_disturb,
+                    "t_disturb_s": args.e6d_width_s,
+                    "delay_after_disturb_s": delay_s,
+                    "reference_or_disturbed": "disturbed",
+                    "note": f"opposite_disturb_after_{initial_state}_{v_disturb:+g}V_{args.e6d_width_s:g}s",
+                })
+            _check_samples(rows[-len(rr):], "E6D")
+            _check_ig(rows[-len(rr):], "E6D", args.e6d_ig_stop_uA)
+            print(f"SHOT_OK: E6D rep={rep} initial={initial_state} disturb={v_disturb:+g}V delay_s={delay_s:g} seq={seq}")
+            seq += 1
+    out_csv = out_dir / "e6d_halfvdd_disturb_delay.csv"
+    _write_rows(out_csv, rows)
+    return _summarize(args, "E6D", out_csv, rows, "E6D_DISTURB_DELAY_DONE")
 
 
 # E3 constants
@@ -720,7 +892,7 @@ def run_stage_e3_width(backend, args) -> StageSummary:
             seq += 1
     out_csv = out_dir / "e3_pulse_width_scan.csv"
     _write_rows(out_csv, rows)
-    return _summarize("E3W", out_csv, rows, "E3W_PULSE_WIDTH_DONE")
+    return _summarize(args, "E3W", out_csv, rows, "E3W_PULSE_WIDTH_DONE")
 
 
 def run_stage_e3_amp(backend, args) -> StageSummary:
@@ -752,7 +924,7 @@ def run_stage_e3_amp(backend, args) -> StageSummary:
             seq += 1
     out_csv = out_dir / "e3_amplitude_scan.csv"
     _write_rows(out_csv, rows)
-    return _summarize("E3A", out_csv, rows, "E3A_AMPLITUDE_DONE")
+    return _summarize(args, "E3A", out_csv, rows, "E3A_AMPLITUDE_DONE")
 
 
 # E4 constants
@@ -830,7 +1002,7 @@ def run_stage_e4(backend, args) -> StageSummary:
             seq += 1
     out_csv = out_dir / "e4_prebias.csv"
     _write_rows(out_csv, rows)
-    return _summarize("E4", out_csv, rows, "E4_PREBIAS_DONE")
+    return _summarize(args, "E4", out_csv, rows, "E4_PREBIAS_DONE")
 
 
 def run_stage_e5(backend, args) -> StageSummary:
@@ -864,54 +1036,101 @@ def run_stage_e5(backend, args) -> StageSummary:
             seq += 1
     out_csv = out_dir / "e5_visibility_grid.csv"
     _write_rows(out_csv, rows)
-    return _summarize("E5", out_csv, rows, "E5_VISIBILITY_DONE")
+    return _summarize(args, "E5", out_csv, rows, "E5_VISIBILITY_DONE")
 
 
 def run_stage_cycle(backend, args) -> StageSummary:
-    """Cycle endurance: repeated ERS/PGM writes with fixed 10us read."""
-    out_dir = _stage_dir(args, "CYCLE_endurance")
+    """Checkpointed cycle endurance: stress many cycles, read MW only at checkpoints."""
+    checkpoints = [c for c in _parse_int_list_csv(args.cycle_checkpoints) if c <= args.cycle_count]
+    if not checkpoints or checkpoints[-1] != args.cycle_count:
+        checkpoints.append(int(args.cycle_count))
+    checkpoints = sorted(set(checkpoints))
+
+    out_dir = _stage_dir(args, "CYCLE_checkpoint_endurance")
     rows = []
     seq = 0
-    for cyc in range(args.cycle_count):
+    current_cycle = 0
+    vg_reads = VG_E5 if args.cycle_wide_vg else VG_CYCLE
+
+    for checkpoint in checkpoints:
+        current_cycle = _run_cycle_stress_to_checkpoint(
+            backend, current_cycle=current_cycle, target_cycle=checkpoint
+        )
         for state in ["ERS", "PGM"]:
-            rr = run_e1_shot(backend, state=state, delay_s=CYCLE_DELAY,
-                             vg_reads=VG_CYCLE, vd_read=VD_READ, n_pts=N_PTS)
+            rr = run_e1_shot(
+                backend,
+                state=state,
+                delay_s=CYCLE_DELAY,
+                vg_reads=vg_reads,
+                vd_read=VD_READ,
+                n_pts=N_PTS,
+            )
             for r in rr:
                 rows.append({
                     "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
                     "stage": "CYCLE", "device_id": args.device_id, "geometry": args.geometry,
-                    "sequence_id": seq, "repeat_index": cyc, "state_target": state,
-                    "delay_s": CYCLE_DELAY, "dose_mode": "cycle_endurance", "n_read": cyc + 1,
-                    **r, "note": f"cycle={cyc+1}_fixed_10us",
+                    "sequence_id": seq, "repeat_index": checkpoint, "state_target": state,
+                    "delay_s": CYCLE_DELAY, "dose_mode": "cycle_checkpoint", "n_read": checkpoint,
+                    **r, "note": f"checkpoint_cycle={checkpoint}_stress_then_read",
                 })
             _check_samples(rows[-len(rr):], "CYCLE")
             _check_ig(rows[-len(rr):], "CYCLE", args.cycle_ig_stop_uA)
-            print(f"SHOT_OK: CYCLE cycle={cyc+1} state={state} seq={seq}")
+            print(f"SHOT_OK: CYCLE checkpoint={checkpoint} state={state} seq={seq}")
             seq += 1
-    out_csv = out_dir / "cycle_endurance.csv"
+    out_csv = out_dir / "cycle_checkpoint_endurance.csv"
     _write_rows(out_csv, rows)
-    return _summarize("CYCLE", out_csv, rows, "CYCLE_ENDURANCE_DONE")
+    return _summarize(args, "CYCLE", out_csv, rows, "CYCLE_CHECKPOINT_ENDURANCE_DONE")
+
+
+STAGE_REGISTRY = {
+    "S0": StageSpec("S0", "S0_open_fixture_smoke", "open/fixture read-only smoke", run_stage_s0),
+    "S1": StageSpec("S1", "S1_device_read_only_baseline", "device read-only baseline", run_stage_s1),
+    "E1": StageSpec("E1", "E1_RAWD_QUICK300ms_v2", "RAWD delay experiment", run_stage_e1),
+    "E2": StageSpec("E2", "E2_minimal_A1_A100_C1_C10", "minimal read-disturb", run_stage_e2),
+    "E3W": StageSpec("E3W", "E3_pulse_width_scan", "pulse-width scan", run_stage_e3_width),
+    "E3A": StageSpec("E3A", "E3_amplitude_scan", "amplitude scan", run_stage_e3_amp),
+    "E4": StageSpec("E4", "E4_prebias", "pre-bias polarity test", run_stage_e4),
+    "E5": StageSpec("E5", "E5_visibility_grid", "Vg/Vd read-window grid", run_stage_e5),
+    "E6R": StageSpec("E6R", "E6R_no_disturb_reference", "no-disturb reference (paired with E6D)", run_stage_e6r),
+    "E6D": StageSpec("E6D", "E6D_halfVdd_disturb_delay", "half-Vdd disturb-delay", run_stage_e6d),
+    "CYCLE": StageSpec("CYCLE", "CYCLE_checkpoint_endurance", "checkpointed cycle endurance", run_stage_cycle),
+}
+ALL_DRY_STAGES = tuple(STAGE_REGISTRY)
 
 
 def print_plan(args) -> None:
     print("PLAN_BEGIN")
     print(f"live={args.live} stage={args.stage} device_id={args.device_id} geometry={args.geometry}")
-    print(f"hardcoded_channels: Gate={GATE_CH}, Drain={DRAIN_CH}; forbidden={sorted(FORBIDDEN_CHANNELS)}")
+    print(f"channels: Gate={GATE_CH}, Drain={DRAIN_CH}; allowed={sorted(ALLOWED_CHANNELS)} forbidden={sorted(FORBIDDEN_CHANNELS)}")
+    print("stage_registry:")
+    for spec in STAGE_REGISTRY.values():
+        print(f"  {spec.name}: {spec.output_label} — {spec.description}")
     print(f"S0: reps={args.s0_reps}, no write, VG={VG_READS}, VD={VD_READ} V, stop |Ig|>{args.s0_ig_stop_uA:g} uA")
     print(f"S1: reps={args.s1_reps}, no write, VG={VG_READS}, VD={VD_READ} V, stop |Ig|>{args.s1_ig_stop_uA:g} uA")
     print(f"E1: delays={DELAYS_QUICK300}, reps={args.e1_reps}, ERS=+5V/100us, PGM=-5V/100us, stop |Ig|>{args.e1_ig_stop_uA:g} uA")
     print(f"E2: combos={E2_MINIMAL_COMBOS}, reps={args.e2_reps}, split-dose chunks, skip C100, stop |Ig|>{args.e2_ig_stop_uA:g} uA")
     print(f"E5: Vg={VG_E5}, Vd={VD_E5}, delays={DELAYS_E5}, reps={args.e5_reps}, stop |Ig|>{args.e5_ig_stop_uA:g} uA")
+    print(f"E6R: delays={_parse_float_list_csv(args.e6d_delays) or DISTURB_DELAYS_DEFAULT}, Vg={VG_E5 if args.e6d_wide_vg else DISTURB_VG_READS}, reps={getattr(args, 'e6r_reps', args.e6d_reps)}, stop |Ig|>{getattr(args, 'e6r_ig_stop_uA', args.e6d_ig_stop_uA):g} uA (no-disturb reference)")
+    print(f"E6D: amps={_parse_float_list_csv(args.e6d_amps)}, delays={_parse_float_list_csv(args.e6d_delays)}, width={args.e6d_width_s:g}s, Vg={VG_E5 if args.e6d_wide_vg else DISTURB_VG_READS}, reps={args.e6d_reps}, stop |Ig|>{args.e6d_ig_stop_uA:g} uA")
+    print(f"CYCLE: checkpoints={_parse_int_list_csv(args.cycle_checkpoints)}, max_cycle={args.cycle_count}, Vg={VG_E5 if args.cycle_wide_vg else VG_CYCLE}, stress_chunk<={_max_cycle_stress_chunk()} cycles, stop |Ig|>{args.cycle_ig_stop_uA:g} uA")
     print("PLAN_END")
 
 
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--stage", choices=["PLAN", "S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "CYCLE", "ALL_DRY"], default="PLAN")
+    ap.add_argument("--stage", choices=["PLAN", *STAGE_REGISTRY.keys(), "ALL_DRY"], default="PLAN")
     ap.add_argument("--live", action="store_true", help="Open real WGFMU session and drive hardware for one stage only")
     ap.add_argument("--confirm", default="", help="Must equal selected stage in live mode, e.g. --confirm S1")
     ap.add_argument("--device-id", default="L40W10_01")
     ap.add_argument("--geometry", default="L40W10")
+    ap.add_argument("--gate-ch", type=int, default=DEFAULT_GATE_CH,
+                    help="WGFMU channel connected to Gate; default matches yhzang fixture")
+    ap.add_argument("--drain-ch", type=int, default=DEFAULT_DRAIN_CH,
+                    help="WGFMU channel connected to Drain; default matches yhzang fixture")
+    ap.add_argument("--allowed-channels", default=",".join(str(x) for x in sorted(DEFAULT_ALLOWED_CHANNELS)),
+                    help="Comma-separated WGFMU channels that this fixture may use")
+    ap.add_argument("--forbidden-channels", default=",".join(str(x) for x in sorted(DEFAULT_FORBIDDEN_CHANNELS)),
+                    help="Comma-separated WGFMU channels that must never be selected")
     ap.add_argument("--seed", type=int, default=20260522)
     ap.add_argument("--randomize-delays", action="store_true", default=True)
     ap.add_argument("--s0-reps", type=int, default=5)
@@ -932,53 +1151,63 @@ def parse_args(argv=None):
     ap.add_argument("--e4-ig-stop-uA", type=float, default=30.0)
     ap.add_argument("--e5-reps", type=int, default=3)
     ap.add_argument("--e5-ig-stop-uA", type=float, default=20.0)
-    ap.add_argument("--cycle-count", type=int, default=20)
+    ap.add_argument("--e6r-reps", type=int, default=3)
+    ap.add_argument("--e6r-ig-stop-uA", type=float, default=20.0)
+    ap.add_argument("--e6d-reps", type=int, default=3)
+    ap.add_argument("--e6d-amps", default=",".join(str(x) for x in DISTURB_AMPS_DEFAULT),
+                    help="Absolute disturb amplitudes in V; sign is opposite to initial state")
+    ap.add_argument("--e6d-delays", default=",".join(str(x) for x in DISTURB_DELAYS_DEFAULT),
+                    help="Disturb-to-read delays in seconds")
+    ap.add_argument("--e6d-width-s", type=float, default=DISTURB_WIDTH)
+    ap.add_argument("--e6d-wide-vg", action="store_true", default=False,
+                    help="Use E5 wide Vg grid for disturb reads")
+    ap.add_argument("--e6d-randomize", action="store_true", default=True)
+    ap.add_argument("--e6d-ig-stop-uA", type=float, default=30.0)
+    ap.add_argument("--cycle-count", type=int, default=100000)
+    ap.add_argument(
+        "--cycle-checkpoints",
+        default=",".join(str(x) for x in CYCLE_CHECKPOINTS_DEFAULT),
+        help="Comma-separated cycle counts where ERS/PGM readback is measured",
+    )
+    ap.add_argument("--cycle-wide-vg", action="store_true", default=False,
+                    help="Use E5 wide Vg grid for cycle checkpoint reads")
     ap.add_argument("--cycle-ig-stop-uA", type=float, default=30.0)
-    return ap.parse_args(argv)
+    args = ap.parse_args(argv)
+    args._argv = list(argv) if argv is not None else list(sys.argv[1:])
+    return args
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
+    try:
+        configure_channel_map(args)
+    except StopGate as exc:
+        print(f"REPORT_CODE: {exc.code}")
+        print(f"STOP_GATE: {exc}")
+        return 2
     print_plan(args)
 
     if args.stage == "PLAN":
         print("REPORT_CODE: PLAN_ONLY_NO_HARDWARE")
         return 0
     if args.live:
-        if args.stage == "ALL_DRY":
-            print("REPORT_CODE: SETUP_STOP_LIVE_ALL_FORBIDDEN")
-            print("Live mode is intentionally one stage at a time. Use --stage S0/S1/E1/E2 --live --confirm <STAGE>.")
-            return 2
-        if args.confirm != args.stage:
-            print(f"REPORT_CODE: SETUP_STOP_CONFIRM_REQUIRED_{args.stage}")
-            print(f"For live mode, rerun with: --live --confirm {args.stage}")
+        try:
+            validate_live_request(args.stage, args.live, args.confirm)
+        except StopGate as exc:
+            print(f"REPORT_CODE: {exc.code}")
+            if args.stage == "ALL_DRY":
+                print("Live mode is intentionally one stage at a time. Use --stage S0/S1/E1/E2 --live --confirm <STAGE>.")
+            else:
+                print(f"For live mode, rerun with: --live --confirm {args.stage}")
             return 2
 
     backend = None
     try:
         backend, _resource = make_backend(args.live)
-        stages = ["S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "CYCLE"] if args.stage == "ALL_DRY" else [args.stage]
+        args._backend_resource = _resource
+        stages = list(ALL_DRY_STAGES) if args.stage == "ALL_DRY" else [args.stage]
         for stage in stages:
-            if stage == "S0":
-                run_stage_s0(backend, args)
-            elif stage == "S1":
-                run_stage_s1(backend, args)
-            elif stage == "E1":
-                run_stage_e1(backend, args)
-            elif stage == "E2":
-                run_stage_e2(backend, args)
-            elif stage == "E3W":
-                run_stage_e3_width(backend, args)
-            elif stage == "E3A":
-                run_stage_e3_amp(backend, args)
-            elif stage == "E4":
-                run_stage_e4(backend, args)
-            elif stage == "E5":
-                run_stage_e5(backend, args)
-            elif stage == "CYCLE":
-                run_stage_cycle(backend, args)
-            else:
-                raise ValueError(stage)
+            STAGE_REGISTRY[stage].runner(backend, args)
         if not args.live and isinstance(backend, AuditBackend):
             print(f"DRY_RUN_AUDIT: execute_count={backend.execute_count} max_vectors_seen={backend.max_vectors_seen}")
         return 0
@@ -1000,3 +1229,5 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
