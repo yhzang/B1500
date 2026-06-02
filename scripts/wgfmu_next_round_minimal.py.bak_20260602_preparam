@@ -65,8 +65,6 @@ T_WRITE = 100e-6
 T_READ = 5e-6
 T_NEUTRAL = 100e-6
 N_PTS = 5
-# Default write amplitudes = paper standard +/-5 V. Use --write-v to override per run
-# (e.g. --write-v 4 -> ERS=+4 V / PGM=-4 V); no temporary voltage is hard-coded here.
 V_ERS = +5.0
 V_PGM = -5.0
 DELAYS_QUICK300 = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 3e-2, 1e-1, 3e-1]
@@ -136,36 +134,6 @@ def _parse_float_list_csv(value: str) -> list[float]:
         if part:
             out.append(float(part))
     return sorted(set(out))
-
-
-def _resolve_write_v(state: str, args) -> float:
-    """Effective write amplitude for a write pulse, honoring --write-v.
-
-    --write-v gives the magnitude; polarity stays ERS=+ / PGM=-. When not
-    provided, fall back to the global paper-standard defaults (+/-5 V).
-    """
-    wv = getattr(args, "write_v", None)
-    if wv is not None:
-        mag = abs(float(wv))
-        return +mag if state == "ERS" else -mag
-    return V_ERS if state == "ERS" else V_PGM
-
-
-def _resolve_t_write(args) -> float:
-    """Effective write pulse width, honoring --t-write-s (default T_WRITE)."""
-    return float(getattr(args, "t_write_s", None) or T_WRITE)
-
-
-def _resolve_vd_read(args) -> float:
-    """Effective read drain voltage, honoring --vd-read (default VD_READ)."""
-    vd = getattr(args, "vd_read", None)
-    return float(vd) if vd is not None else VD_READ
-
-
-def _resolve_s1_vg(args) -> list[float]:
-    """Effective S0/S1 read points, honoring --s1-vg (default VG_READS)."""
-    vg = _parse_float_list_csv(getattr(args, "s1_vg", None))
-    return vg or list(VG_READS)
 
 
 def configure_channel_map(args) -> None:
@@ -250,14 +218,6 @@ def _build_manifest(args, *, stage: str, stage_label: str, out_csv: Path, report
             "disturb_amps_abs": _parse_float_list_csv(args.e6d_amps),
             "disturb_delays": _parse_float_list_csv(args.e6d_delays),
             "disturb_width_s": args.e6d_width_s,
-        },
-        "wgfmu_effective": {
-            "write_v_arg": getattr(args, "write_v", None),
-            "v_ers_eff": _resolve_write_v("ERS", args),
-            "v_pgm_eff": _resolve_write_v("PGM", args),
-            "t_write_s_eff": _resolve_t_write(args),
-            "vd_read_eff": _resolve_vd_read(args),
-            "s1_vg_eff": _resolve_s1_vg(args),
         },
         "backend_resource": resource,
         "output_csv": str(out_csv),
@@ -477,15 +437,9 @@ def run_disturb_delay_shot(
     vg_reads: list[float] = DISTURB_VG_READS,
     vd_read: float = VD_READ,
     n_pts: int = N_PTS,
-    v_write: float | None = None,
-    t_write: float = T_WRITE,
 ) -> list[dict]:
     """Set ERS/PGM, apply an opposite small disturb pulse, then read after delay."""
-    if v_write is None:
-        v_initial = V_ERS if initial_state == "ERS" else V_PGM
-    else:
-        mag = abs(float(v_write))
-        v_initial = +mag if initial_state == "ERS" else -mag
+    v_initial = V_ERS if initial_state == "ERS" else V_PGM
     backend.clear()
     backend.create_pattern("gp", 0.0)
     backend.create_pattern("dp", 0.0)
@@ -494,7 +448,7 @@ def run_disturb_delay_shot(
     for dt, vg in [
         (T_RESET, 0.0),
         (T_RF, v_initial),
-        (t_write, v_initial),
+        (T_WRITE, v_initial),
         (T_RF, 0.0),
         (DISTURB_NEUTRAL_WAIT, 0.0),
         (T_RF, v_disturb),
@@ -577,17 +531,12 @@ def _add_dose_vectors(backend, *, mode: str, n_read: int) -> tuple[float, int]:
     return t_total, n_vec
 
 
-def _run_reset_write_phase(backend, *, state: str, v_write: float | None = None,
-                           t_write: float = T_WRITE):
-    if v_write is None:
-        v_write = V_ERS if state == "ERS" else V_PGM
-    else:
-        mag = abs(float(v_write))
-        v_write = +mag if state == "ERS" else -mag
+def _run_reset_write_phase(backend, *, state: str):
+    v_write = V_ERS if state == "ERS" else V_PGM
     backend.clear()
     backend.create_pattern("gp", 0.0)
     backend.create_pattern("dp", 0.0)
-    for dt, vg in [(T_RESET, 0.0), (T_RF, v_write), (t_write, v_write), (T_RF, 0.0)]:
+    for dt, vg in [(T_RESET, 0.0), (T_RF, v_write), (T_WRITE, v_write), (T_RF, 0.0)]:
         backend.add_vector("gp", dt, vg)
         backend.add_vector("dp", dt, 0.0)
     _configure_and_run_phase(backend, measure=False, timeout_s=30.0)
@@ -655,9 +604,8 @@ def _run_dose_chunk_phase(backend, *, mode: str, n_chunk: int, vd_read: float):
 
 
 def run_e2_shot(backend, *, state: str, mode: str, n_read: int,
-                vg_reads: list[float] = VG_READS, vd_read: float = VD_READ,
-                v_write: float | None = None, t_write: float = T_WRITE) -> list[dict]:
-    _run_reset_write_phase(backend, state=state, v_write=v_write, t_write=t_write)
+                vg_reads: list[float] = VG_READS, vd_read: float = VD_READ) -> list[dict]:
+    _run_reset_write_phase(backend, state=state)
     chunks = _dose_chunk_counts(mode, n_read)
     for n_chunk in chunks:
         _run_dose_chunk_phase(backend, mode=mode, n_chunk=n_chunk, vd_read=vd_read)
@@ -718,10 +666,8 @@ def run_stage_s0(backend, args) -> StageSummary:
     out_dir = _stage_dir(args, "S0_open_fixture_smoke")
     rows = []
     seq = 0
-    vg_reads = _resolve_s1_vg(args)
-    vd_read = _resolve_vd_read(args)
     for rep in range(args.s0_reps):
-        rr = run_readonly_shot(backend, vg_reads=vg_reads, vd_read=vd_read, n_pts=N_PTS)
+        rr = run_readonly_shot(backend, vg_reads=VG_READS, vd_read=VD_READ, n_pts=N_PTS)
         for r in rr:
             rows.append({
                 "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
@@ -742,10 +688,8 @@ def run_stage_s1(backend, args) -> StageSummary:
     out_dir = _stage_dir(args, "S1_device_read_only_baseline")
     rows = []
     seq = 0
-    vg_reads = _resolve_s1_vg(args)
-    vd_read = _resolve_vd_read(args)
     for rep in range(args.s1_reps):
-        rr = run_readonly_shot(backend, vg_reads=vg_reads, vd_read=vd_read, n_pts=N_PTS)
+        rr = run_readonly_shot(backend, vg_reads=VG_READS, vd_read=VD_READ, n_pts=N_PTS)
         for r in rr:
             rows.append({
                 "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
@@ -774,10 +718,7 @@ def run_stage_e1(backend, args) -> StageSummary:
             rng.shuffle(delays)
         for delay_s in delays:
             for state in ["ERS", "PGM"]:
-                rr = run_e1_shot(backend, state=state, delay_s=delay_s, vg_reads=vg_reads,
-                                 vd_read=_resolve_vd_read(args),
-                                 v_write=_resolve_write_v(state, args),
-                                 t_write=_resolve_t_write(args))
+                rr = run_e1_shot(backend, state=state, delay_s=delay_s, vg_reads=vg_reads)
                 for r in rr:
                     rows.append({
                         "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
@@ -801,10 +742,7 @@ def run_stage_e2(backend, args) -> StageSummary:
     seq = 0
     for rep in range(args.e2_reps):
         for state, mode, n_read in E2_MINIMAL_COMBOS:
-            rr = run_e2_shot(backend, state=state, mode=mode, n_read=n_read,
-                             vd_read=_resolve_vd_read(args),
-                             v_write=_resolve_write_v(state, args),
-                             t_write=_resolve_t_write(args))
+            rr = run_e2_shot(backend, state=state, mode=mode, n_read=n_read)
             for r in rr:
                 rows.append({
                     "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
@@ -845,10 +783,8 @@ def run_stage_e6r(backend, args) -> StageSummary:
                 state=initial_state,
                 delay_s=delay_s,
                 vg_reads=vg_reads,
-                vd_read=_resolve_vd_read(args),
+                vd_read=VD_READ,
                 n_pts=N_PTS,
-                v_write=_resolve_write_v(initial_state, args),
-                t_write=_resolve_t_write(args),
             )
             for r in rr:
                 rows.append({
@@ -895,10 +831,8 @@ def run_stage_e6d(backend, args) -> StageSummary:
                 t_disturb_s=args.e6d_width_s,
                 delay_after_disturb_s=delay_s,
                 vg_reads=vg_reads,
-                vd_read=_resolve_vd_read(args),
+                vd_read=VD_READ,
                 n_pts=N_PTS,
-                v_write=_resolve_write_v(initial_state, args),
-                t_write=_resolve_t_write(args),
             )
             for r in rr:
                 rows.append({
@@ -1087,9 +1021,7 @@ def run_stage_e5(backend, args) -> StageSummary:
         rng.shuffle(order)
         for state, vd, delay_s in order:
             rr = run_e1_shot(backend, state=state, delay_s=delay_s,
-                             vg_reads=VG_E5, vd_read=vd, n_pts=N_PTS,
-                             v_write=_resolve_write_v(state, args),
-                             t_write=_resolve_t_write(args))
+                             vg_reads=VG_E5, vd_read=vd, n_pts=N_PTS)
             for r in rr:
                 rows.append({
                     "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
@@ -1173,17 +1105,9 @@ def print_plan(args) -> None:
     print("stage_registry:")
     for spec in STAGE_REGISTRY.values():
         print(f"  {spec.name}: {spec.output_label} — {spec.description}")
-    _eff_ers = _resolve_write_v("ERS", args)
-    _eff_pgm = _resolve_write_v("PGM", args)
-    _eff_tw = _resolve_t_write(args)
-    _eff_vd = _resolve_vd_read(args)
-    _eff_s1vg = _resolve_s1_vg(args)
-    _wv_src = "--write-v" if getattr(args, "write_v", None) is not None else "default(global V_ERS/V_PGM)"
-    print(f"WRITE_PARAMS: ERS={_eff_ers:+g}V PGM={_eff_pgm:+g}V t_write={_eff_tw:g}s (src={_wv_src})")
-    print(f"READ_PARAMS: vd_read={_eff_vd:g}V s1_vg={_eff_s1vg}")
-    print(f"S0: reps={args.s0_reps}, no write, VG={_eff_s1vg}, VD={_eff_vd:g} V, stop |Ig|>{args.s0_ig_stop_uA:g} uA")
-    print(f"S1: reps={args.s1_reps}, no write, VG={_eff_s1vg}, VD={_eff_vd:g} V, stop |Ig|>{args.s1_ig_stop_uA:g} uA")
-    print(f"E1: delays={DELAYS_QUICK300}, reps={args.e1_reps}, ERS={_eff_ers:+g}V/{_eff_tw:g}s, PGM={_eff_pgm:+g}V/{_eff_tw:g}s, stop |Ig|>{args.e1_ig_stop_uA:g} uA")
+    print(f"S0: reps={args.s0_reps}, no write, VG={VG_READS}, VD={VD_READ} V, stop |Ig|>{args.s0_ig_stop_uA:g} uA")
+    print(f"S1: reps={args.s1_reps}, no write, VG={VG_READS}, VD={VD_READ} V, stop |Ig|>{args.s1_ig_stop_uA:g} uA")
+    print(f"E1: delays={DELAYS_QUICK300}, reps={args.e1_reps}, ERS=+5V/100us, PGM=-5V/100us, stop |Ig|>{args.e1_ig_stop_uA:g} uA")
     print(f"E2: combos={E2_MINIMAL_COMBOS}, reps={args.e2_reps}, split-dose chunks, skip C100, stop |Ig|>{args.e2_ig_stop_uA:g} uA")
     print(f"E5: Vg={VG_E5}, Vd={VD_E5}, delays={DELAYS_E5}, reps={args.e5_reps}, stop |Ig|>{args.e5_ig_stop_uA:g} uA")
     print(f"E6R: delays={_parse_float_list_csv(args.e6d_delays) or DISTURB_DELAYS_DEFAULT}, Vg={VG_E5 if args.e6d_wide_vg else DISTURB_VG_READS}, reps={getattr(args, 'e6r_reps', args.e6d_reps)}, stop |Ig|>{getattr(args, 'e6r_ig_stop_uA', args.e6d_ig_stop_uA):g} uA (no-disturb reference)")
@@ -1209,16 +1133,6 @@ def parse_args(argv=None):
                     help="Comma-separated WGFMU channels that must never be selected")
     ap.add_argument("--seed", type=int, default=20260522)
     ap.add_argument("--randomize-delays", action="store_true", default=True)
-    ap.add_argument("--write-v", type=float, default=None,
-                    help="Write pulse magnitude in V; sets ERS=+|v|/PGM=-|v|, overrides global "
-                         "V_ERS/V_PGM for E1/E2/E5/E6R/E6D writes. Default None = paper-standard +/-5 V")
-    ap.add_argument("--t-write-s", type=float, default=None,
-                    help="Write pulse width in seconds for E1/E2/E5/E6R/E6D writes (default 100e-6)")
-    ap.add_argument("--vd-read", type=float, default=None,
-                    help="Read drain voltage in V for S0/S1/E1/E2/E6R/E6D reads (default 0.05)")
-    ap.add_argument("--s1-vg", default=None,
-                    help="Comma-separated S0/S1 read Vg points in V, e.g. -1.0,-0.7,-0.2,0,0.2 "
-                         "(default -0.2,0.0,0.2)")
     ap.add_argument("--s0-reps", type=int, default=5)
     ap.add_argument("--s1-reps", type=int, default=20)
     ap.add_argument("--e1-reps", type=int, default=3)
