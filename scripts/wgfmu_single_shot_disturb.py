@@ -679,30 +679,39 @@ def run_stage_e6m(backend, args):
             # --- disturb train with checkpoint reads ---
             current_n = 0
             cum_time = 0.0
-            for cp in checkpoints:
-                current_n, added = _run_disturb_train_to(
-                    backend, v_disturb=v_disturb, t_disturb_s=t_disturb,
-                    t_interval_s=t_interval, current_n=current_n, target_n=cp,
-                )
-                cum_time += added
-                rr = base.run_readonly_shot(backend, vg_reads=vg_reads,
-                                            vd_read=vd_read, n_pts=args.n_pts)
-                _emit(rr, current_n, cum_time, "checkpoint")
-                try:
-                    _check_samples(rows[-len(rr):], "E6M")
-                    _check_ig(rows[-len(rr):], "E6M", args.e6m_ig_stop_uA)
-                except StopGate:
-                    # fragile L10: flush measured checkpoints before the stop-gate aborts.
-                    if rows:
-                        write_rows_csv(out_dir / E6M_CSV_NAME, rows, E6M_FIELDNAMES)
-                    raise
-                # progress: dId at main point vs baseline
-                main_now = next((float(r["Id_mean_A"]) for r in rr
-                                 if round(float(r["Vg_read_V"]), 6) == main_key), float("nan"))
-                did = (main_now - base_main) if not math.isnan(base_main) else float("nan")
-                print(f"SHOT_OK: E6M rep={rep} {initial_state} N={current_n} "
-                      f"Id@{main_vg:g}V={main_now:.3e}A dId={did:+.3e}A seq={seq}")
-                seq += 1
+            try:
+                for cp in checkpoints:
+                    current_n, added = _run_disturb_train_to(
+                        backend, v_disturb=v_disturb, t_disturb_s=t_disturb,
+                        t_interval_s=t_interval, current_n=current_n, target_n=cp,
+                    )
+                    cum_time += added
+                    rr = base.run_readonly_shot(backend, vg_reads=vg_reads,
+                                                vd_read=vd_read, n_pts=args.n_pts)
+                    _emit(rr, current_n, cum_time, "checkpoint")
+                    try:
+                        _check_samples(rows[-len(rr):], "E6M")
+                        _check_ig(rows[-len(rr):], "E6M", args.e6m_ig_stop_uA)
+                    except StopGate:
+                        # fragile L10: flush measured checkpoints before the stop-gate aborts.
+                        if rows:
+                            write_rows_csv(out_dir / E6M_CSV_NAME, rows, E6M_FIELDNAMES)
+                        raise
+                    # progress: dId at main point vs baseline
+                    main_now = next((float(r["Id_mean_A"]) for r in rr
+                                     if round(float(r["Vg_read_V"]), 6) == main_key), float("nan"))
+                    did = (main_now - base_main) if not math.isnan(base_main) else float("nan")
+                    print(f"SHOT_OK: E6M rep={rep} {initial_state} N={current_n} "
+                          f"Id@{main_vg:g}V={main_now:.3e}A dId={did:+.3e}A seq={seq}")
+                    seq += 1
+                    # flush after each checkpoint so Ctrl-C before the next disturb train
+                    # chunk still keeps all completed checkpoints on disk
+                    write_rows_csv(out_dir / E6M_CSV_NAME, rows, E6M_FIELDNAMES)
+            except KeyboardInterrupt:
+                # last checkpoint read's rows are already in `rows`; write them out
+                if rows:
+                    write_rows_csv(out_dir / E6M_CSV_NAME, rows, E6M_FIELDNAMES)
+                raise
 
     out_csv = out_dir / E6M_CSV_NAME
     write_rows_csv(out_csv, rows, E6M_FIELDNAMES)
