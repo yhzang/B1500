@@ -432,7 +432,7 @@ def run_stage_e6s(backend, args):
     rows = []
     seq = 0
     for rep in range(args.reps):
-        for initial_state in ["ERS", "PGM"]:
+        for initial_state in (["ERS", "PGM"] if args.write_state == "BOTH" else [args.write_state]):
             v_disturb = -amp_abs if initial_state == "ERS" else amp_abs
             rr = run_e6s_shot(
                 backend,
@@ -789,7 +789,7 @@ def run_stage_e1s(backend, args):
     rows = []
     seq = 0
     for rep in range(args.reps):
-        for state in ["ERS", "PGM"]:
+        for state in (["ERS", "PGM"] if args.write_state == "BOTH" else [args.write_state]):
             rr = run_e1s_shot(
                 backend,
                 state=state,
@@ -885,7 +885,8 @@ def _print_plan_e1s(args) -> None:
     print(f"WRITE_PARAMS: ERS={ers:+g}V PGM={pgm:+g}V t_write={tw:g}s (src={src})")
     print(f"READ_PARAMS: vd_read={float(args.vd_read):g}V read_vg={vg_reads} (main={E1S_MAIN_VG:g}V) t_read={float(args.t_read_s):g}s")
     print("E1S: ONE write per shot, then read the SAME state at increasing delays (no re-write).")
-    print(f"  requested_delays={delays}  reps/state={args.reps}  states=[ERS,PGM]  -> 2 writes/rep")
+    _states = ["ERS", "PGM"] if args.write_state == "BOTH" else [args.write_state]
+    print(f"  requested_delays={delays}  reps/state={args.reps}  write_state={args.write_state} states={_states} -> {len(_states)} write(s)/rep")
     print("  NOTE: reads are cumulative in real time; short delays may merge. Realized delay saved as delay_s.")
     print("  MW(delay) = Id(ERS)-Id(PGM) @ main read point (computed in analysis).")
     print(f"  stop |Ig|>{args.e1s_ig_stop_uA:g} uA")
@@ -913,7 +914,8 @@ def print_plan(args) -> None:
     print("E6S: ONE write per shot, then read[pre] -> disturb -> read[post] x len(delays).")
     print(f"  disturb: amp=-/+{amp_abs:g}V (opposite to written state), width={args.disturb_width_s:g}s, "
           f"neutral_wait={args.neutral_wait_s:g}s")
-    print(f"  post_delays={post_delays}  reps/state={args.reps}  states=[ERS,PGM]")
+    _states = ["ERS", "PGM"] if args.write_state == "BOTH" else [args.write_state]
+    print(f"  post_delays={post_delays}  reps/state={args.reps}  write_state={args.write_state} states={_states} -> {len(_states)} write(s)/rep")
     print(f"  outputs per shot: dId@{E6S_MAIN_VG:g}V = Id(post)-Id(pre); gm from pre-read 2 pts; dVth=-dId/gm")
     print(f"  stop |Ig|>{args.e6s_ig_stop_uA:g} uA")
     print("PLAN_END")
@@ -940,6 +942,10 @@ def parse_args(argv=None):
     ap.add_argument("--write-v", type=float, default=None,
                     help="Write magnitude in V; ERS=+|v|/PGM=-|v|. Default None = +/-5 V.")
     ap.add_argument("--t-write-s", type=float, default=None, help="Write pulse width (s), default 100e-6")
+    ap.add_argument("--write-state", choices=["ERS", "PGM", "BOTH"], default="BOTH",
+                    help="Which state(s) to WRITE. BOTH = ERS then PGM (2 full writes/device, BIPOLAR). "
+                         "Use ERS or PGM for ONE write per device — minimizes the bipolar stress that breaks "
+                         "fragile L10. Applies to E1S/E6S (E6M still uses --e6m-state).")
     ap.add_argument("--vd-read", type=float, default=base.VD_READ, help="Read drain voltage (V), default 0.05")
     ap.add_argument("--n-pts", type=int, default=base.N_PTS,
                     help="Samples averaged per read window (default 5). Raise (e.g. 32) on fragile points to shrink SEM.")
