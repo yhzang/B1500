@@ -950,8 +950,8 @@ def parse_args(argv=None):
     ap.add_argument("--n-pts", type=int, default=base.N_PTS,
                     help="Samples averaged per read window (default 5). Raise (e.g. 32) on fragile points to shrink SEM.")
     ap.add_argument("--read-irange-drain", default=None,
-                    help="Drain(Id) measure current range: 1UA/10UA/100UA/1MA (default keeps 1MA). "
-                         "Lower = better resolution on uA reads; 100UA safe vs <=30uA stop gate, 10UA best SNR.")
+                    help="Drain(Id) measure current range: 1UA/10UA/100UA/1MA (DEFAULT 100UA as of 2026-06-04). "
+                         "100UA safe vs <=30uA stop gate; pass 1MA to revert, 10UA for best SNR if reads stay <10uA.")
     ap.add_argument("--read-irange-gate", default=None,
                     help="Gate(Ig) measure current range; default keeps 1MA (gate leakage can be large).")
     ap.add_argument("--wide-recovery", action="store_true",

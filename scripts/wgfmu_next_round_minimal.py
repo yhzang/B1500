@@ -65,11 +65,13 @@ T_WRITE = 100e-6
 T_READ = 5e-6
 T_NEUTRAL = 100e-6
 N_PTS = 5
-# Read-phase current measure range per channel; "1MA" default preserves legacy behavior.
-# Lower the DRAIN range (e.g. "10UA"/"100UA") to gain resolution on uA-level reads
-# (set via wgfmu_single_shot_disturb.py --read-irange-drain). Valid: 1UA/10UA/100UA/1MA/10MA.
+# Read-phase current measure range per channel. Valid: 1UA/10UA/100UA/1MA/10MA.
+# DRAIN default LOWERED to 100UA (2026-06-04) for resolution on uA-level reads;
+# GATE stays 1MA (gate leakage can be large). Override per run via
+# --read-irange-drain / --read-irange-gate (those win over these defaults).
+# >>> To change the CAMPAIGN default range later, edit the two lines below. <<<
 MEAS_IRANGE_GATE = "1MA"
-MEAS_IRANGE_DRAIN = "1MA"
+MEAS_IRANGE_DRAIN = "100UA"
 # Default write amplitudes = paper standard +/-5 V. Use --write-v to override per run
 # (e.g. --write-v 4 -> ERS=+4 V / PGM=-4 V); no temporary voltage is hard-coded here.
 V_ERS = +5.0
