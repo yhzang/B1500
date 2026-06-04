@@ -102,6 +102,21 @@ E1S_MAIN_VG = -1.0
 E1S_DELAYS_DEFAULT = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0]
 E1S_IG_STOP_UA_DEFAULT = 20.0
 
+# E1S rich-read (read-only) characterization, enabled by --rich-read.
+# After the single write we can still READ the device as much as we like (reads at
+# Vg<=1.2 V / Vd<=0.2 V / 5 us are far below the FE/trap switch thresholds -> no
+# disturb, the device's one-write budget is intact). So we bracket the UNCHANGED
+# retention sweep with two read-only transfer curves over a finer Vg grid AND a 2nd
+# drain bias:
+#   * PRISTINE (pre-write, virgin device) -> the Vth/gm zero reference
+#   * post-retention CHARACTERIZATION    -> Vth/gm/SS of the relaxed written state
+# The 2nd Vd separates true channel current (~linear in Vd) from the Vd-independent
+# gate-leakage background (the Ig~Id caveat) and gives the Svis projection the model
+# needs. The Vg grid is a SUPERSET of E1S_READ_VG_DEFAULT, so the retention points
+# stay byte-comparable to earlier single-Vd runs.
+E1S_RICH_VG_DEFAULT = [0.0, -0.1, -0.2, -0.3, -0.4, -0.5, -0.6, -0.7, -0.8, -0.9, -1.0, -1.1, -1.2]
+E1S_RICH_VD_DEFAULT = [0.05, 0.15]
+
 E1S_FIELDNAMES = [
     "timestamp_iso", "stage", "device_id", "geometry", "sequence_id", "repeat_index",
     "state_target", "requested_delay_s", "delay_s", "Vg_read_V", "Vd_read_V",
@@ -778,6 +793,30 @@ def _print_plan_e6m(args) -> None:
     print("PLAN_END")
 
 
+def _e1s_rows_from_readonly(rr, *, args, state_target, seq, rep, note):
+    """Convert base.run_readonly_shot() rows into E1S CSV rows (read-only, NO write).
+
+    Used by --rich-read for the pristine (pre-write) and post-retention
+    characterization transfer curves. requested_delay_s/delay_s are blank because
+    these rows are not part of the time-resolved retention sweep — they are tagged
+    and selected via the `note` column (and state_target=PRISTINE for the virgin read).
+    """
+    out = []
+    for r in rr:
+        out.append({
+            "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
+            "stage": "E1S", "device_id": args.device_id, "geometry": args.geometry,
+            "sequence_id": seq, "repeat_index": rep, "state_target": state_target,
+            "requested_delay_s": "", "delay_s": "",
+            "Vg_read_V": r["Vg_read_V"], "Vd_read_V": r["Vd_read_V"],
+            "Id_mean_A": r["Id_mean_A"], "Id_std_A": r["Id_std_A"],
+            "Ig_mean_A": r["Ig_mean_A"], "Ig_std_A": r["Ig_std_A"],
+            "n_d": r["n_d"], "n_g": r["n_g"],
+            "note": note,
+        })
+    return out
+
+
 def run_stage_e1s(backend, args):
     """E1S: single-write retention. ONE write per (state, rep); read the same
     written state at increasing delays without re-writing. ERS + PGM are separate
@@ -794,8 +833,36 @@ def run_stage_e1s(backend, args):
     delays = _parse_float_list_csv(args.delays) or list(E1S_DELAYS_DEFAULT)
     vd_read = float(args.vd_read)
     t_read = float(args.t_read_s)
+    rich_read = bool(getattr(args, "rich_read", False))
+    rich_vg = _parse_float_list_csv(getattr(args, "rich_vg", None)) or list(E1S_RICH_VG_DEFAULT)
+    rich_vd = _parse_float_list_csv(getattr(args, "rich_vd", None)) or list(E1S_RICH_VD_DEFAULT)
 
     rows = []
+
+    def _flush_e1s():
+        if rows:
+            write_rows_csv(out_dir / E1S_CSV_NAME, rows, E1S_FIELDNAMES)
+
+    # rich-read PRISTINE: read-only transfer curve(s) on the VIRGIN device, BEFORE the
+    # single write -> the Vth/gm zero reference. Pre-write, so a tripped gate here means
+    # the device is already bad: flush + abort before wasting the one write on it.
+    if rich_read:
+        n_pre = 0
+        for vd in rich_vd:
+            pr = base.run_readonly_shot(backend, vg_reads=rich_vg, vd_read=float(vd), n_pts=args.n_pts)
+            rows.extend(_e1s_rows_from_readonly(
+                pr, args=args, state_target="PRISTINE", seq=-1, rep=0,
+                note=f"pristine_prewrite_richread_Vd{float(vd):g}"))
+            n_pre += len(pr)
+        if n_pre:
+            try:
+                _check_samples(rows[-n_pre:], "E1S")
+                _check_ig(rows[-n_pre:], "E1S", args.e1s_ig_stop_uA)
+            except StopGate:
+                _flush_e1s()
+                raise
+        print(f"PRISTINE_OK: E1S rich-read pristine ({len(rich_vg)} Vg x {len(rich_vd)} Vd)")
+
     seq = 0
     for rep in range(args.reps):
         for state in (["ERS", "PGM"] if args.write_state == "BOTH" else [args.write_state]):
@@ -828,11 +895,37 @@ def run_stage_e1s(backend, args):
                 _check_ig(rows[-len(rr):], "E1S", args.e1s_ig_stop_uA)
             except StopGate:
                 # fragile L10: flush already-measured rows before the stop-gate aborts the run.
-                if rows:
-                    write_rows_csv(out_dir / E1S_CSV_NAME, rows, E1S_FIELDNAMES)
+                _flush_e1s()
                 raise
             print(f"SHOT_OK: E1S rep={rep} state={state} delays={len(delays)} "
                   f"(ONE write) seq={seq}")
+
+            # rich-read CHARACTERIZATION: read-only transfer curve(s) on the SAME written
+            # device AFTER the retention sweep (state has relaxed to >= the last delay).
+            # Best-effort: the precious retention rows are already in `rows`, so ANY failure
+            # here just flushes + warns + continues — never discard a good retention run for
+            # a bonus read.
+            if rich_read:
+                try:
+                    n_char = 0
+                    for vd in rich_vd:
+                        cr = base.run_readonly_shot(backend, vg_reads=rich_vg, vd_read=float(vd), n_pts=args.n_pts)
+                        rows.extend(_e1s_rows_from_readonly(
+                            cr, args=args, state_target=state, seq=seq, rep=rep,
+                            note=f"post_retention_char_richread_{state}_Vd{float(vd):g}"))
+                        n_char += len(cr)
+                    if n_char:
+                        _check_samples(rows[-n_char:], "E1S")
+                        _check_ig(rows[-n_char:], "E1S", args.e1s_ig_stop_uA)
+                    print(f"CHAR_OK: E1S post-retention ({len(rich_vg)} Vg x {len(rich_vd)} Vd) state={state}")
+                except StopGate as exc:
+                    _flush_e1s()
+                    print(f"CHAR_STOP_GATE: E1S post-retention gate tripped ({exc.code}); "
+                          f"retention data flushed, continuing.")
+                except Exception as exc:  # noqa: BLE001  bonus read is best-effort
+                    _flush_e1s()
+                    print(f"CHAR_WARN: E1S post-retention read failed "
+                          f"({type(exc).__name__}: {exc}); retention data flushed, continuing.")
             seq += 1
 
     out_csv = out_dir / E1S_CSV_NAME
@@ -898,6 +991,13 @@ def _print_plan_e1s(args) -> None:
     print(f"  requested_delays={delays}  reps/state={args.reps}  write_state={args.write_state} states={_states} -> {len(_states)} write(s)/rep")
     print("  NOTE: reads are cumulative in real time; short delays may merge. Realized delay saved as delay_s.")
     print("  MW(delay) = Id(ERS)-Id(PGM) @ main read point (computed in analysis).")
+    if getattr(args, "rich_read", False):
+        rich_vg = _parse_float_list_csv(getattr(args, "rich_vg", None)) or list(E1S_RICH_VG_DEFAULT)
+        rich_vd = _parse_float_list_csv(getattr(args, "rich_vd", None)) or list(E1S_RICH_VD_DEFAULT)
+        print(f"  RICH-READ: read-only pristine(pre-write)+post-retention transfer curves, "
+              f"Vg={rich_vg} x Vd={rich_vd} (NO extra write; Vth/gm/SS + Svis/leakage separation)")
+    else:
+        print("  RICH-READ: off (pass --rich-read to add pristine+post-retention Vth/gm/SS + dual-Vd)")
     print(f"  stop |Ig|>{args.e1s_ig_stop_uA:g} uA")
     print("PLAN_END")
 
@@ -988,6 +1088,18 @@ def parse_args(argv=None):
                     help="E1S: comma-separated write->read delays (s), increasing, "
                          "e.g. 1e-6,1e-5,1e-4,1e-3,1e-2,1e-1,1.0 (default that list)")
     ap.add_argument("--e1s-ig-stop-uA", type=float, default=E1S_IG_STOP_UA_DEFAULT)
+    ap.add_argument("--rich-read", action="store_true",
+                    help="E1S: bracket the (unchanged) retention sweep with read-only pristine "
+                         "(pre-write) + post-retention transfer curves over a finer Vg grid AND a "
+                         "2nd drain bias. NO extra write (read-only) -> single-write budget intact. "
+                         "Gives Vth/gm/SS + channel-vs-gate-leakage (Svis) separation. Retention "
+                         "points stay comparable to non-rich runs.")
+    ap.add_argument("--rich-vg", default=None,
+                    help="E1S rich-read Vg grid (comma, use '=' for negatives), default "
+                         "0..-1.2 step 0.1 (superset of --read-vg).")
+    ap.add_argument("--rich-vd", default=None,
+                    help="E1S rich-read drain biases (comma), default 0.05,0.15 (2 Vd -> "
+                         "separate channel current from the Vd-independent gate-leakage background).")
     # E6M-specific (multi-disturb accumulation)
     ap.add_argument("--checkpoints", default=None,
                     help="E6M: comma-separated cumulative disturb counts to read at, "
