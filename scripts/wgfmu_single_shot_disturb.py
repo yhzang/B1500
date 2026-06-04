@@ -422,7 +422,9 @@ def run_stage_e6s(backend, args):
     vg_reads = _parse_float_list_csv(args.read_vg) or list(E6S_READ_VG_DEFAULT)
     main_vg = E6S_MAIN_VG if any(abs(v - E6S_MAIN_VG) < 1e-9 for v in vg_reads) else vg_reads[0]
     main_key = round(float(main_vg), 6)
-    post_delays = _parse_float_list_csv(args.post_delays) or list(E6S_POST_DELAYS_DEFAULT)
+    _e6s_wide_recovery = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0]
+    post_delays = (_parse_float_list_csv(args.post_delays)
+                   or (_e6s_wide_recovery if getattr(args, "wide_recovery", False) else list(E6S_POST_DELAYS_DEFAULT)))
     amp_abs = abs(float(args.disturb_amp))
     t_read = float(args.t_read_s)
     vd_read = float(args.vd_read)
@@ -440,7 +442,7 @@ def run_stage_e6s(backend, args):
                 post_delays_s=post_delays,
                 vg_reads=vg_reads,
                 vd_read=vd_read,
-                n_pts=base.N_PTS,
+                n_pts=args.n_pts,
                 t_read=t_read,
                 v_write=_resolve_write_v(initial_state, args),
                 t_write=float(getattr(args, "t_write_s", None) or base.T_WRITE),
@@ -480,8 +482,15 @@ def run_stage_e6s(backend, args):
                     "dVth_disturb_V": d_vth,
                     "note": f"single_shot_disturb_after_{initial_state}_{v_disturb:+g}V_{args.disturb_width_s:g}s",
                 })
-            _check_samples(rows[-len(rr):], "E6S")
-            _check_ig(rows[-len(rr):], "E6S", args.e6s_ig_stop_uA)
+            try:
+                _check_samples(rows[-len(rr):], "E6S")
+                _check_ig(rows[-len(rr):], "E6S", args.e6s_ig_stop_uA)
+            except StopGate:
+                # fragile L10: a tripped stop-gate must NOT discard the already-measured
+                # (irreplaceable first-shot) rows. Flush before propagating the gate.
+                if rows:
+                    write_rows_csv(out_dir / CSV_NAME, rows, FIELDNAMES)
+                raise
             _gm_str = f"{gm:.3e}" if not math.isnan(gm) else "nan"
             print(f"SHOT_OK: E6S rep={rep} initial={initial_state} disturb={v_disturb:+g}V "
                   f"pre_main={pre_main:.3e}A gm={_gm_str}S seq={seq}")
@@ -634,7 +643,7 @@ def run_stage_e6m(backend, args):
 
             # --- baseline read (N=0), no disturb yet ---
             base_rr = base.run_readonly_shot(backend, vg_reads=vg_reads,
-                                             vd_read=vd_read, n_pts=base.N_PTS)
+                                             vd_read=vd_read, n_pts=args.n_pts)
             base_by_vg = {round(float(r["Vg_read_V"]), 6): r["Id_mean_A"] for r in base_rr}
             gm = _gm_from_pre(base_by_vg, main_key)
             base_main = base_by_vg.get(main_key, float("nan"))
@@ -677,10 +686,16 @@ def run_stage_e6m(backend, args):
                 )
                 cum_time += added
                 rr = base.run_readonly_shot(backend, vg_reads=vg_reads,
-                                            vd_read=vd_read, n_pts=base.N_PTS)
+                                            vd_read=vd_read, n_pts=args.n_pts)
                 _emit(rr, current_n, cum_time, "checkpoint")
-                _check_samples(rows[-len(rr):], "E6M")
-                _check_ig(rows[-len(rr):], "E6M", args.e6m_ig_stop_uA)
+                try:
+                    _check_samples(rows[-len(rr):], "E6M")
+                    _check_ig(rows[-len(rr):], "E6M", args.e6m_ig_stop_uA)
+                except StopGate:
+                    # fragile L10: flush measured checkpoints before the stop-gate aborts.
+                    if rows:
+                        write_rows_csv(out_dir / E6M_CSV_NAME, rows, E6M_FIELDNAMES)
+                    raise
                 # progress: dId at main point vs baseline
                 main_now = next((float(r["Id_mean_A"]) for r in rr
                                  if round(float(r["Vg_read_V"]), 6) == main_key), float("nan"))
@@ -781,7 +796,7 @@ def run_stage_e1s(backend, args):
                 delays_s=delays,
                 vg_reads=vg_reads,
                 vd_read=vd_read,
-                n_pts=base.N_PTS,
+                n_pts=args.n_pts,
                 t_read=t_read,
                 v_write=_resolve_write_v(state, args),
                 t_write=float(getattr(args, "t_write_s", None) or base.T_WRITE),
@@ -799,8 +814,14 @@ def run_stage_e1s(backend, args):
                     "n_d": r["n_d"], "n_g": r["n_g"],
                     "note": f"single_write_retention_{state}_one_write_then_read_vs_delay",
                 })
-            _check_samples(rows[-len(rr):], "E1S")
-            _check_ig(rows[-len(rr):], "E1S", args.e1s_ig_stop_uA)
+            try:
+                _check_samples(rows[-len(rr):], "E1S")
+                _check_ig(rows[-len(rr):], "E1S", args.e1s_ig_stop_uA)
+            except StopGate:
+                # fragile L10: flush already-measured rows before the stop-gate aborts the run.
+                if rows:
+                    write_rows_csv(out_dir / E1S_CSV_NAME, rows, E1S_FIELDNAMES)
+                raise
             print(f"SHOT_OK: E1S rep={rep} state={state} delays={len(delays)} "
                   f"(ONE write) seq={seq}")
             seq += 1
@@ -873,7 +894,9 @@ def _print_plan_e1s(args) -> None:
 
 def print_plan(args) -> None:
     vg_reads = _parse_float_list_csv(args.read_vg) or list(E6S_READ_VG_DEFAULT)
-    post_delays = _parse_float_list_csv(args.post_delays) or list(E6S_POST_DELAYS_DEFAULT)
+    _e6s_wide_recovery = [1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1.0, 10.0, 100.0]
+    post_delays = (_parse_float_list_csv(args.post_delays)
+                   or (_e6s_wide_recovery if getattr(args, "wide_recovery", False) else list(E6S_POST_DELAYS_DEFAULT)))
     amp_abs = abs(float(args.disturb_amp))
     _wv = getattr(args, "write_v", None)
     if _wv is None:
@@ -918,6 +941,15 @@ def parse_args(argv=None):
                     help="Write magnitude in V; ERS=+|v|/PGM=-|v|. Default None = +/-5 V.")
     ap.add_argument("--t-write-s", type=float, default=None, help="Write pulse width (s), default 100e-6")
     ap.add_argument("--vd-read", type=float, default=base.VD_READ, help="Read drain voltage (V), default 0.05")
+    ap.add_argument("--n-pts", type=int, default=base.N_PTS,
+                    help="Samples averaged per read window (default 5). Raise (e.g. 32) on fragile points to shrink SEM.")
+    ap.add_argument("--read-irange-drain", default=None,
+                    help="Drain(Id) measure current range: 1UA/10UA/100UA/1MA (default keeps 1MA). "
+                         "Lower = better resolution on uA reads; 100UA safe vs <=30uA stop gate, 10UA best SNR.")
+    ap.add_argument("--read-irange-gate", default=None,
+                    help="Gate(Ig) measure current range; default keeps 1MA (gate leakage can be large).")
+    ap.add_argument("--wide-recovery", action="store_true",
+                    help="E6S: wide post-disturb recovery delays 1us..100s (trap re-emission / recovery scan).")
     # E6S-specific
     ap.add_argument("--read-vg", default=None,
                     help="Comma-separated read Vg points; [0]=main MW point, rest give gm. "
@@ -960,6 +992,10 @@ def main(argv=None) -> int:
     import os
     import time
     args = parse_args(argv)
+    if getattr(args, "read_irange_drain", None):
+        base.MEAS_IRANGE_DRAIN = args.read_irange_drain.upper()
+    if getattr(args, "read_irange_gate", None):
+        base.MEAS_IRANGE_GATE = args.read_irange_gate.upper()
     try:
         base.configure_channel_map(args)
     except StopGate as exc:

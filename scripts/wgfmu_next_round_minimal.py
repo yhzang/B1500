@@ -65,6 +65,11 @@ T_WRITE = 100e-6
 T_READ = 5e-6
 T_NEUTRAL = 100e-6
 N_PTS = 5
+# Read-phase current measure range per channel; "1MA" default preserves legacy behavior.
+# Lower the DRAIN range (e.g. "10UA"/"100UA") to gain resolution on uA-level reads
+# (set via wgfmu_single_shot_disturb.py --read-irange-drain). Valid: 1UA/10UA/100UA/1MA/10MA.
+MEAS_IRANGE_GATE = "1MA"
+MEAS_IRANGE_DRAIN = "1MA"
 # Default write amplitudes = paper standard +/-5 V. Use --write-v to override per run
 # (e.g. --write-v 4 -> ERS=+4 V / PGM=-4 V); no temporary voltage is hard-coded here.
 V_ERS = +5.0
@@ -333,7 +338,7 @@ def _configure_and_run_phase(backend, *, measure: bool, timeout_s: float = 30.0)
         backend.set_force_voltage_range(ch, force_range)
         backend.set_measure_enabled(ch, True)
         backend.set_measure_mode(ch, "CURRENT")
-        backend.set_measure_current_range(ch, "1MA")
+        backend.set_measure_current_range(ch, MEAS_IRANGE_GATE if ch == GATE_CH else MEAS_IRANGE_DRAIN)
     backend.set_timeout(timeout_s)
     backend.connect(GATE_CH)
     backend.connect(DRAIN_CH)
