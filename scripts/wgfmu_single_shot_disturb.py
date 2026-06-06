@@ -543,6 +543,7 @@ def run_stage_e6s(backend, args):
             "v_ers_eff": (_resolve_write_v("ERS", args) if getattr(args, "write_v", None) is not None else base.V_ERS),
             "v_pgm_eff": (_resolve_write_v("PGM", args) if getattr(args, "write_v", None) is not None else base.V_PGM),
             "t_write_s_eff": float(getattr(args, "t_write_s", None) or base.T_WRITE),
+            "t_rf_s_eff": float(base.T_RF),
         },
         "stop_gate_uA": {"E6S": args.e6s_ig_stop_uA},
         "output_csv": str(out_csv),
@@ -776,6 +777,7 @@ def run_stage_e6m(backend, args):
             "v_ers_eff": (_resolve_write_v("ERS", args) if getattr(args, "write_v", None) is not None else base.V_ERS),
             "v_pgm_eff": (_resolve_write_v("PGM", args) if getattr(args, "write_v", None) is not None else base.V_PGM),
             "t_write_s_eff": t_write,
+            "t_rf_s_eff": float(base.T_RF),
         },
         "stop_gate_uA": {"E6M": args.e6m_ig_stop_uA},
         "output_csv": str(out_csv), "report_code": code,
@@ -980,6 +982,7 @@ def run_stage_e1s(backend, args):
             "v_ers_eff": (_resolve_write_v("ERS", args) if getattr(args, "write_v", None) is not None else base.V_ERS),
             "v_pgm_eff": (_resolve_write_v("PGM", args) if getattr(args, "write_v", None) is not None else base.V_PGM),
             "t_write_s_eff": float(getattr(args, "t_write_s", None) or base.T_WRITE),
+            "t_rf_s_eff": float(base.T_RF),
         },
         "stop_gate_uA": {"E1S": args.e1s_ig_stop_uA},
         "output_csv": str(out_csv),
@@ -1092,6 +1095,9 @@ def parse_args(argv=None):
                     help="Comma-separated read Vg points; [0]=main MW point, rest give gm. "
                          "Use '=' for negatives, e.g. --read-vg=-1.0,-0.7 (default -1.0,-0.7)")
     ap.add_argument("--t-read-s", type=float, default=base.T_READ, help="Read pulse width (s), default 5e-6")
+    ap.add_argument("--t-rf-s", type=float, default=None,
+                    help="Pulse rise/fall time (s) for ALL edges (write/read/disturb). "
+                         "Default keeps base.T_RF=100e-9. Edge-rate comparison: try 500e-9.")
     ap.add_argument("--disturb-amp", type=float, default=E6S_AMP_DEFAULT,
                     help="Disturb magnitude (V); sign is opposite to the written state (default 2.5)")
     ap.add_argument("--disturb-width-s", type=float, default=E6S_WIDTH_DEFAULT,
@@ -1145,6 +1151,9 @@ def main(argv=None) -> int:
         base.MEAS_IRANGE_DRAIN = args.read_irange_drain.upper()
     if getattr(args, "read_irange_gate", None):
         base.MEAS_IRANGE_GATE = args.read_irange_gate.upper()
+    if getattr(args, "t_rf_s", None):
+        base.T_RF = float(args.t_rf_s)
+        print(f"T_RF_OVERRIDE: {base.T_RF:g} s (default 100e-9; applies to ALL write/read/disturb edges)")
     try:
         base.configure_channel_map(args)
     except StopGate as exc:
