@@ -290,6 +290,8 @@ def make_backend(live: bool):
     if not live:
         b = AuditBackend(gate_ch=GATE_CH, drain_ch=DRAIN_CH, channels=[201, 202, 301, 302])
         b.open_session("DUMMY::WGFMU")
+        b._fefet_visa_addr = "DUMMY::WGFMU"     # FIX B plumbing (dry-run parity)
+        b._fefet_wgfmu_initialized = False      # FIX A plumbing (dry-run parity)
         _validate_channels(b.get_channel_ids())
         print("DRY_RUN_BACKEND: no VISA, no DLL, no hardware output")
         print(f"CHANNELS_OK: Gate={GATE_CH}, Drain={DRAIN_CH}, detected={b.get_channel_ids()}")
@@ -315,6 +317,8 @@ def make_backend(live: bool):
     idn = clear_b1500_status_for_wgfmu_open(visa_addr)
     print(f"B1500 preflight ERRX drain OK: {idn}")
     backend.open_session(visa_addr)
+    backend._fefet_visa_addr = visa_addr        # FIX B (init=-6): remembered for session recovery
+    backend._fefet_wgfmu_initialized = False    # FIX A: initialize once per opened session
     backend.set_timeout(30.0)
     channel_ids = backend.get_channel_ids()
     print(f"WGFMU_CHANNELS: {channel_ids}")
@@ -331,10 +335,57 @@ def _safe_disconnect(backend, *channels: int) -> None:
             pass
 
 
+def _ensure_wgfmu_initialized(backend, force: bool = False) -> None:
+    """FIX A (2026-06-06, WGFMU init=-6 root cause): WGFMU_initialize resets the
+    channel hardware state (it does NOT clear the pattern data setup) and the
+    vendor examples call it ONCE per opened session. The old flow called it for
+    EVERY phase/chunk (~146x per 1e5 disturb segment), degrading the session
+    until the driver returns status=-6. Initialize once per opened session;
+    FIX B recovery forces a re-init after reopening."""
+    if force or not getattr(backend, "_fefet_wgfmu_initialized", False):
+        backend.initialize()
+        backend._fefet_wgfmu_initialized = True
+
+
+def _is_wgfmu_session_error(exc: BaseException) -> bool:
+    """True for driver/session-level failures worth one reopen-and-retry (FIX B),
+    most notably WGFMU status=-6 (degraded/stale session, see setup_helpers)."""
+    if getattr(exc, "status", None) == -6:
+        return True
+    return "status=-6" in str(exc)
+
+
+def _reopen_wgfmu_session(backend) -> None:
+    """FIX B (2026-06-06): close the degraded session, drain the B1500 GPIB
+    error queue (stale ERRX entries make WGFMU_openSession fail with -6, see
+    setup_helpers), reopen, and force re-initialize. The caller must rebuild
+    its patterns (clear() + create) before re-executing - chunk/phase builders
+    that start from backend.clear() can simply be replayed."""
+    resource = getattr(backend, "_fefet_visa_addr", None)
+    try:
+        backend.close_session()
+    except Exception:
+        pass
+    if resource and not str(resource).startswith("DUMMY"):
+        try:
+            from fefetlab.measurements.wgfmu import clear_b1500_status_for_wgfmu_open
+            clear_b1500_status_for_wgfmu_open(resource)
+        except Exception:
+            pass
+    if resource:
+        backend.open_session(resource)
+    try:
+        backend.set_timeout(30.0)
+    except Exception:
+        pass
+    backend._fefet_wgfmu_initialized = False
+    _ensure_wgfmu_initialized(backend)
+
+
 def _configure_and_run_phase(backend, *, measure: bool, timeout_s: float = 30.0):
     backend.add_sequence(GATE_CH, "gp", 1)
     backend.add_sequence(DRAIN_CH, "dp", 1)
-    backend.initialize()
+    _ensure_wgfmu_initialized(backend)
     for ch, force_range in [(GATE_CH, "AUTO"), (DRAIN_CH, "3V")]:
         backend.set_operation_mode(ch, "FASTIV")
         backend.set_force_voltage_range(ch, force_range)

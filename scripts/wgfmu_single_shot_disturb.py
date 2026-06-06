@@ -561,9 +561,31 @@ def _run_disturb_train_chunk(backend, *, v_disturb, t_disturb_s, t_interval_s, n
     ONE execute, no readout. Drain held at 0. Used between read checkpoints.
 
     Each pulse = rise(T_RF) + hold(t_disturb) + fall(T_RF) + interval gap.
+
+    FIX B (2026-06-06, WGFMU init=-6): if the session degrades mid-train,
+    reopen it once and replay THIS chunk - safe because the chunk body starts
+    from backend.clear() and rebuilds its patterns from scratch.
     """
     if n_pulses <= 0:
         return
+    try:
+        return _run_disturb_train_chunk_once(
+            backend, v_disturb=v_disturb, t_disturb_s=t_disturb_s,
+            t_interval_s=t_interval_s, n_pulses=n_pulses,
+        )
+    except Exception as exc:
+        if not base._is_wgfmu_session_error(exc):
+            raise
+        print(f"WGFMU_SESSION_ERROR: {exc}")
+        print("FIX_B_RECOVERY: reopening WGFMU session and replaying this chunk once")
+        base._reopen_wgfmu_session(backend)
+        return _run_disturb_train_chunk_once(
+            backend, v_disturb=v_disturb, t_disturb_s=t_disturb_s,
+            t_interval_s=t_interval_s, n_pulses=n_pulses,
+        )
+
+
+def _run_disturb_train_chunk_once(backend, *, v_disturb, t_disturb_s, t_interval_s, n_pulses):
     backend.clear()
     backend.create_pattern("gp", 0.0)
     backend.create_pattern("dp", 0.0)
