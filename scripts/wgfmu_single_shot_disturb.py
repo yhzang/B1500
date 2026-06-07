@@ -1055,6 +1055,56 @@ def print_plan(args) -> None:
     print("PLAN_END")
 
 
+# --- host-level inter-step rest gate -----------------------------------------
+# Strict N-second quiet time BETWEEN shots (e.g. the 60 s rests of the
+# polarity-conditioning sequence). Every live run writes an anchor file at
+# teardown; the next run started with --rest-s waits until <rest_s> seconds
+# have passed since that anchor before driving hardware. The realized rest is
+# printed (REST_GATE_DONE) so it lands in the run log. Wall-clock based, good
+# to ~1 s — replaces hand-timed rests (2026-06-06 polarity round: 19-70 s).
+REST_ANCHOR_PATH = _HERE.parent / "runs" / "rest_anchor.txt"
+
+
+def _write_rest_anchor(path: Path = REST_ANCHOR_PATH) -> None:
+    import time
+    path.parent.mkdir(parents=True, exist_ok=True)
+    iso = _dt.datetime.now().isoformat(timespec="seconds")
+    path.write_text(f"{time.time():.3f}\n{iso}\n", encoding="ascii")
+    print(f"REST_ANCHOR_WRITTEN: {iso} ({path})")
+
+
+def _rest_gate(rest_s: float, live: bool, path: Path = REST_ANCHOR_PATH) -> None:
+    import time
+    if not path.exists():
+        print(f"REST_GATE: no anchor at {path} -> first step of sequence, no wait")
+        return
+    try:
+        t0 = float(path.read_text(encoding="ascii").splitlines()[0])
+    except Exception as exc:
+        print(f"REST_GATE: unreadable anchor ({exc!r}) -> no wait")
+        return
+    elapsed = time.time() - t0
+    if not live:
+        print(f"REST_GATE_DRYRUN: would wait {max(0.0, rest_s - elapsed):.1f}s "
+              f"(rest_s={rest_s:g}, anchor age {elapsed:.1f}s)")
+        return
+    if elapsed >= rest_s:
+        print(f"REST_GATE_DONE: achieved_rest_s={elapsed:.1f} >= requested {rest_s:g} (no wait)")
+        return
+    end = t0 + rest_s
+    print(f"REST_GATE: holding {end - time.time():.1f}s (rest_s={rest_s:g}, "
+          f"anchor age {elapsed:.1f}s)")
+    while True:
+        left = end - time.time()
+        if left <= 0:
+            break
+        if left > 5.0:
+            print(f"REST_GATE: {left:.0f}s left "
+                  f"(now {_dt.datetime.now().isoformat(timespec='seconds')})")
+        time.sleep(min(5.0, left))
+    print(f"REST_GATE_DONE: achieved_rest_s={time.time() - t0:.1f} (requested {rest_s:g})")
+
+
 def parse_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--stage", choices=["PLAN", "E6S", "E1S", "E6M"], default="PLAN",
@@ -1098,6 +1148,13 @@ def parse_args(argv=None):
     ap.add_argument("--t-rf-s", type=float, default=None,
                     help="Pulse rise/fall time (s) for ALL edges (write/read/disturb). "
                          "Default keeps base.T_RF=100e-9. Edge-rate comparison: try 500e-9.")
+    ap.add_argument("--rest-s", type=float, default=0.0,
+                    help="Host-level quiet gate: wait until this many seconds have passed "
+                         "since the previous LIVE shot ended (anchor runs/rest_anchor.txt, "
+                         "written at teardown of every live run) before driving hardware. "
+                         "0 = off. Use --rest-s 60 for the strict 60 s rests of the "
+                         "polarity-conditioning sequence; realized rest is printed as "
+                         "REST_GATE_DONE and lands in the run log. Dry-run prints only.")
     ap.add_argument("--disturb-amp", type=float, default=E6S_AMP_DEFAULT,
                     help="Disturb magnitude (V); sign is opposite to the written state (default 2.5)")
     ap.add_argument("--disturb-width-s", type=float, default=E6S_WIDTH_DEFAULT,
@@ -1183,6 +1240,8 @@ def main(argv=None) -> int:
     try:
         backend, resource = base.make_backend(args.live)
         args._backend_resource = resource
+        if float(getattr(args, "rest_s", 0.0) or 0.0) > 0:
+            _rest_gate(float(args.rest_s), args.live)
         if args.stage == "E1S":
             run_stage_e1s(backend, args)
         elif args.stage == "E6M":
@@ -1207,6 +1266,11 @@ def main(argv=None) -> int:
             except Exception:
                 pass
             time.sleep(0.2)
+            if args.live:
+                try:
+                    _write_rest_anchor()
+                except Exception as exc:
+                    print(f"REST_ANCHOR_WRITE_FAILED: {exc!r}")
 
 
 if __name__ == "__main__":
