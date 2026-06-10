@@ -1,16 +1,40 @@
 """协议注册表 · GUI / CLI / manifest 的唯一协议来源。
 
-设计文档 §3.2。当前 M1 阶段把现有 `protocols.wgfmu_fefet.STAGE_REGISTRY`(11 段 StageSpec)
+设计文档 §3.2。把现有 `protocols.wgfmu_fefet.STAGE_REGISTRY`(11 段 StageSpec)
 升格成 `ProtocolSpec`(超集),`runner` 直接指向现有 `run_stage_*`,**协议逻辑零改写**。
 
-`params` 暂留空元组 —— 逐参数 `ParamSpec` 枚举(供 GUI 表单自动生成 + `build_argparser`)
-是 M1 下一步(连同 B7 模块常量提升一起做)。届时填上 `params=(...)` 即可点亮 GUI 表单,
-而本文件的 `runner` 指向与执行路径不变。
+每个 ProtocolSpec 的 `params` 现已枚举该协议的**测量旋钮 + 通道**(供 GUI 表单自动
+生成 / 校验 / manifest)。枚举口径:
+  * 每个 `ParamSpec` 1:1 对应 `wgfmu_fefet.parse_args` 的一个 `--flag`,`name`==argparse
+    dest,`default`==argparse 默认值(一致性由 `tests/test_registry_params.py` 逐条守门)。
+  * `cli_flag` 由 `name` 按 `--{name.replace('_','-')}` 派生,保证 name↔flag 不会手抖错配。
+  * **器件身份字段(device-id/geometry/serial/device-type/operator)不进 params** —— 它们是
+    Setup Profile / 运行头里的自由文本元数据,且 ParamKind/Widget 词汇刻意不含纯文本类型;
+    身份由器件选择器处理,不在逐协议测量表单里。`--stage`(协议选择器本身)、`--confirm`
+    (live 安全握手令牌)同理不入 params。
+  * B7 仍硬编码在 runner 里的物理常量(E3_WIDTHS/E3_AMPS/E4_PREBIAS_*/VG_E5/N_PTS/量程…)
+    尚未提升为 flag,故暂不在此枚举;待 B7 常量提升后补对应 ParamSpec。
 """
 from __future__ import annotations
 
-from ..protocols.wgfmu_fefet import STAGE_REGISTRY
+from typing import Any
+
+from ..protocols.wgfmu_fefet import (
+    DEFAULT_ALLOWED_CHANNELS,
+    DEFAULT_DRAIN_CH,
+    DEFAULT_FORBIDDEN_CHANNELS,
+    DEFAULT_GATE_CH,
+    DISTURB_AMPS_DEFAULT,
+    DISTURB_DELAYS_DEFAULT,
+    DISTURB_WIDTH,
+    CYCLE_CHECKPOINTS_DEFAULT,
+    STAGE_REGISTRY,
+)
+from .specs import ParamKind as K
+from .specs import ParamSpec
 from .specs import ProtocolSpec
+from .specs import Visibility as V
+from .specs import Widget as W
 
 # 阶段码 → (人类标题, 物理量语义)。与设计 §7 协议卡片对齐。
 _META = {
@@ -28,6 +52,137 @@ _META = {
 }
 
 
+def _p(
+    name: str,
+    kind: K,
+    default: Any,
+    *,
+    label: str,
+    unit: str = "",
+    vis: V = V.BASIC,
+    widget: W = W.DOUBLE_SPINBOX,
+    minimum: float | None = None,
+    maximum: float | None = None,
+    choices: tuple | None = None,
+    help: str = "",
+) -> ParamSpec:
+    """构造 ParamSpec,`cli_flag` 由 `name` 派生(`--{name 蛇形转横杠}`),name==argparse dest。"""
+    return ParamSpec(
+        name=name,
+        label=label,
+        kind=kind,
+        default=default,
+        unit=unit,
+        visibility=vis,
+        minimum=minimum,
+        maximum=maximum,
+        choices=choices,
+        widget=widget,
+        cli_flag="--" + name.replace("_", "-"),
+        help=help,
+    )
+
+
+def _reps(name: str, default: int, label: str) -> ParamSpec:
+    return _p(name, K.INT, default, label=label, vis=V.BASIC, widget=W.SPINBOX,
+              minimum=1, help="重复次数/器件")
+
+
+def _ig_stop(name: str, default: float) -> ParamSpec:
+    return _p(name, K.FLOAT, default, label="|Ig| 停门", unit="µA", vis=V.ADVANCED,
+              minimum=0.0, help="栅极漏电安全停门:|Ig| 超过即停,不进下一炮/段")
+
+
+# ── 公共:接线通道(LOCKED 铁律) + 复现/运行模式,所有协议都有 ───────────────────
+COMMON = (
+    _p("gate_ch", K.INT, DEFAULT_GATE_CH, label="Gate 通道", vis=V.LOCKED,
+       widget=W.CHANNEL, help="接 Gate 的 WGFMU 通道;错值打错电极,须接线档案确认"),
+    _p("drain_ch", K.INT, DEFAULT_DRAIN_CH, label="Drain 通道", vis=V.LOCKED,
+       widget=W.CHANNEL, help="接 Drain 的 WGFMU 通道;须与 Gate 不同"),
+    _p("allowed_channels", K.INT_LIST,
+       ",".join(str(x) for x in sorted(DEFAULT_ALLOWED_CHANNELS)),
+       label="允许通道集", vis=V.LOCKED, widget=W.CSV_LINE,
+       help="本夹具允许使用的 WGFMU 通道"),
+    _p("forbidden_channels", K.INT_LIST,
+       ",".join(str(x) for x in sorted(DEFAULT_FORBIDDEN_CHANNELS)),
+       label="禁用通道集", vis=V.LOCKED, widget=W.CSV_LINE,
+       help="绝不可选的通道(如未接 RSU 的 302)"),
+    _p("vd_read", K.FLOAT, None, label="读出 Vd", unit="V", vis=V.BASIC,
+       help="读取时 Drain 电压;None=协议标称 0.05 V"),
+    _p("seed", K.INT, 20260522, label="随机种子", vis=V.ADVANCED, widget=W.SPINBOX,
+       help="延迟随机化种子,复现用"),
+    _p("live", K.BOOL, False, label="联机(真机)", vis=V.ADVANCED, widget=W.CHECKBOX,
+       help="True=驱动真机(须一段一确认);False=dry 审计"),
+)
+
+# ── 写脉冲(只在会写的协议:E1/E2/E5/E6R/E6D) ──────────────────────────────────
+WRITE = (
+    _p("write_v", K.FLOAT, None, label="写脉冲幅值", unit="V", vis=V.BASIC,
+       help="写幅值;设 v 则 ERS=+|v|/PGM=-|v|,覆盖标称 ±5 V。None=±5 V"),
+    _p("t_write_s", K.FLOAT, None, label="写脉冲宽度", unit="s", vis=V.BASIC,
+       help="写脉冲宽度;None=100 µs"),
+)
+
+# ── 读出 Vg 扫描点(只在 S0/S1 读 baseline) ──────────────────────────────────
+READ_VG = (
+    _p("s1_vg", K.FLOAT_LIST, None, label="读出 Vg 点", unit="V", widget=W.CSV_LINE,
+       vis=V.BASIC, help="S0/S1 读出 Vg 扫描点(逗号分隔);None=-0.2,0,0.2"),
+)
+
+# ── 逐协议:专属测量旋钮 + reps + 停门,再拼接公共组 ──────────────────────────
+_STAGE_PARAMS: dict[str, tuple[ParamSpec, ...]] = {
+    "S0": (_reps("s0_reps", 5, "重复次数"), _ig_stop("s0_ig_stop_uA", 5.0),
+           *READ_VG, *COMMON),
+    "S1": (_reps("s1_reps", 20, "重复次数"), _ig_stop("s1_ig_stop_uA", 5.0),
+           *READ_VG, *COMMON),
+    "E1": (_reps("e1_reps", 3, "重复次数"), _ig_stop("e1_ig_stop_uA", 20.0),
+           _p("e1_wide_vg", K.BOOL, False, label="宽 Vg 网格读", vis=V.ADVANCED,
+              widget=W.CHECKBOX, help="用 E5 宽 Vg 网格读,替代默认 [-0.2,0,0.2]"),
+           _p("e1_full_delays", K.BOOL, False, label="全延迟序列", vis=V.ADVANCED,
+              widget=W.CHECKBOX, help="用 DELAYS_FULL(到 10s)替代 QUICK300(到 300ms)"),
+           *WRITE, *COMMON),
+    "E2": (_reps("e2_reps", 2, "重复次数"), _ig_stop("e2_ig_stop_uA", 20.0),
+           *WRITE, *COMMON),
+    "E3W": (_reps("e3_reps", 3, "重复次数"), _ig_stop("e3_ig_stop_uA", 30.0),
+            *COMMON),
+    "E3A": (_reps("e3_reps", 3, "重复次数"), _ig_stop("e3_ig_stop_uA", 30.0),
+            *COMMON),
+    "E4": (_reps("e4_reps", 3, "重复次数"), _ig_stop("e4_ig_stop_uA", 30.0),
+           *COMMON),
+    "E5": (_reps("e5_reps", 3, "重复次数"), _ig_stop("e5_ig_stop_uA", 20.0),
+           *WRITE, *COMMON),
+    "E6R": (_reps("e6r_reps", 3, "重复次数"), _ig_stop("e6r_ig_stop_uA", 20.0),
+            *WRITE, *COMMON),
+    "E6D": (_reps("e6d_reps", 3, "重复次数"),
+            _p("e6d_amps", K.FLOAT_LIST,
+               ",".join(str(x) for x in DISTURB_AMPS_DEFAULT),
+               label="扰动幅值集", unit="V", widget=W.CSV_LINE, vis=V.BASIC,
+               help="扰动绝对幅值(逗号分隔);符号与初态相反"),
+            _p("e6d_delays", K.FLOAT_LIST,
+               ",".join(str(x) for x in DISTURB_DELAYS_DEFAULT),
+               label="扰动-读延迟集", unit="s", widget=W.CSV_LINE, vis=V.BASIC,
+               help="扰动到读取的延迟(逗号分隔,秒)"),
+            _p("e6d_width_s", K.FLOAT, DISTURB_WIDTH, label="扰动脉宽", unit="s",
+               vis=V.BASIC, help="扰动脉冲宽度"),
+            _p("e6d_wide_vg", K.BOOL, False, label="宽 Vg 网格读", vis=V.ADVANCED,
+               widget=W.CHECKBOX, help="扰动读用 E5 宽 Vg 网格"),
+            _p("e6d_randomize", K.BOOL, True, label="随机化顺序", vis=V.ADVANCED,
+               widget=W.CHECKBOX, help="随机化延迟顺序"),
+            _ig_stop("e6d_ig_stop_uA", 30.0),
+            *WRITE, *COMMON),
+    "CYCLE": (_p("cycle_count", K.INT, 100000, label="循环总数", vis=V.BASIC,
+                 widget=W.SPINBOX, minimum=1, help="ERS/PGM 耐久循环总次数"),
+              _p("cycle_checkpoints", K.INT_LIST,
+                 ",".join(str(x) for x in CYCLE_CHECKPOINTS_DEFAULT),
+                 label="检查点", widget=W.CSV_LINE, vis=V.BASIC,
+                 help="在这些循环数处测 ERS/PGM 回读(逗号分隔)"),
+              _p("cycle_wide_vg", K.BOOL, False, label="宽 Vg 网格读", vis=V.ADVANCED,
+                 widget=W.CHECKBOX, help="检查点读用 E5 宽 Vg 网格"),
+              _ig_stop("cycle_ig_stop_uA", 30.0),
+              *COMMON),
+}
+
+
 def _build_registry() -> dict[str, ProtocolSpec]:
     registry: dict[str, ProtocolSpec] = {}
     for sid, sspec in STAGE_REGISTRY.items():
@@ -38,7 +193,7 @@ def _build_registry() -> dict[str, ProtocolSpec]:
             family="WGFMU",
             physics=physics,
             description=sspec.description,
-            params=(),  # TODO(M1 下一步): 枚举 ParamSpec(B7 常量提升后)供 GUI 表单 / argparser
+            params=_STAGE_PARAMS.get(sid, ()),
             csv_schema="fefet_fixedcols",
             output_label=sspec.output_label,
             runner=sspec.runner,
