@@ -43,9 +43,9 @@ COMMON = ["--device-id", "GOLDEN", "--geometry", "L40W10", "--seed", "20260522"]
 REPS = [
     "--s0-reps", "1", "--s1-reps", "1", "--e1-reps", "1", "--e2-reps", "1",
     "--e3-reps", "1", "--e4-reps", "1", "--e5-reps", "1",
-    "--e6r-reps", "1", "--e6d-reps", "1", "--cycle-count", "1",
+    "--e6r-reps", "1", "--e6d-reps", "1", "--cycle-count", "1", "--mlc-reps", "1",
 ]
-STAGES = ["S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE"]
+STAGES = ["S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE", "MLC"]
 
 # ALL_DRY 审计锚点 —— 用 State 记录的同一组 flag(e6r/e6d 取默认 reps=3)。
 # 注意:State(2026-05-26) 记的是 96,但自那以后新增了 E6R/E6D 等段,

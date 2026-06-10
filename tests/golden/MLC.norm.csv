@@ -1,0 +1,7 @@
+timestamp_iso,stage,device_id,geometry,sequence_id,repeat_index,state_target,delay_s,dose_mode,n_read,Vg_read_V,Vd_read_V,Id_mean_A,Id_std_A,Ig_mean_A,Ig_std_A,n_d,n_g,initial_state,V_disturb_V,t_disturb_s,delay_after_disturb_s,reference_or_disturbed,note
+,MLC,GOLDEN,L40W10,0,0,PROG,1e-05,prog_amp=+3.5,,0.5,0.1,8.300000000000002e-09,1.414213562373096e-10,2.0599999999999997e-07,2.828427124746193e-09,5,5,,,,,,mlc_erase=-4V_prog=+3.5V_tw=5e-05s
+,MLC,GOLDEN,L40W10,1,0,PROG,1e-05,prog_amp=+2.5,,0.5,0.1,8.300000000000002e-09,1.414213562373096e-10,2.0599999999999997e-07,2.828427124746193e-09,5,5,,,,,,mlc_erase=-4V_prog=+2.5V_tw=5e-05s
+,MLC,GOLDEN,L40W10,2,0,PROG,1e-05,prog_amp=+1.5,,0.5,0.1,8.300000000000002e-09,1.414213562373096e-10,2.0599999999999997e-07,2.828427124746193e-09,5,5,,,,,,mlc_erase=-4V_prog=+1.5V_tw=5e-05s
+,MLC,GOLDEN,L40W10,3,0,PROG,1e-05,prog_amp=+3,,0.5,0.1,8.300000000000002e-09,1.414213562373096e-10,2.0599999999999997e-07,2.828427124746193e-09,5,5,,,,,,mlc_erase=-4V_prog=+3V_tw=5e-05s
+,MLC,GOLDEN,L40W10,4,0,PROG,1e-05,prog_amp=+3.8,,0.5,0.1,8.300000000000002e-09,1.414213562373096e-10,2.0599999999999997e-07,2.828427124746193e-09,5,5,,,,,,mlc_erase=-4V_prog=+3.8V_tw=5e-05s
+,MLC,GOLDEN,L40W10,5,0,PROG,1e-05,prog_amp=+2,,0.5,0.1,8.300000000000002e-09,1.414213562373096e-10,2.0599999999999997e-07,2.828427124746193e-09,5,5,,,,,,mlc_erase=-4V_prog=+2V_tw=5e-05s

@@ -1211,6 +1211,88 @@ def run_stage_cycle(backend, args) -> StageSummary:
     return _summarize(args, "CYCLE", out_csv, rows, "CYCLE_CHECKPOINT_ENDURANCE_DONE")
 
 
+# MLC constants (PPT 第6页② 多值:每个正编程幅值前先固定擦除 reset,再编程,单点读)
+MLC_AMPS_DEFAULT = [1.5, 2.0, 2.5, 3.0, 3.5, 3.8]   # 编程正幅值集 V(对应 1~200 nA 多值)
+MLC_V_ERASE = 4.0                                    # 擦除幅值绝对值(实际打 -4.0V),每发编程前 reset
+MLC_PULSE_WIDTH = 50e-6                              # 擦/写脉宽 50 µs
+MLC_READ_VG = 0.5                                    # 读 Vg
+MLC_READ_VD = 0.1                                    # 读 Vd
+MLC_DELAY = 10e-6                                    # 编程→读延迟
+
+
+def run_mlc_shot(backend, *, v_erase: float, v_program: float, t_pulse: float,
+                 vg_read: float, vd_read: float = MLC_READ_VD, n_pts: int = N_PTS,
+                 delay_s: float = MLC_DELAY) -> list[dict]:
+    """多值单发:固定擦除(-|v_erase|) → 落座 → 编程(+v_program) → 延迟 → 单点读(vg_read)。
+
+    擦除把器件 reset 到同一起点(椰椰确认),编程幅值由上层扫描给定。结构同 run_disturb_delay_shot
+    (两发栅极脉冲 + 读),但第一发是固定擦除、第二发是可变编程。脉冲仅施加于栅极(dp 恒 0 直到读)。
+    """
+    v_e = -abs(float(v_erase))
+    v_p = float(v_program)
+    backend.clear()
+    backend.create_pattern("gp", 0.0)
+    backend.create_pattern("dp", 0.0)
+    t_prefix = 0.0
+    for dt, vg in [
+        (T_RESET, 0.0),
+        (T_RF, v_e), (t_pulse, v_e), (T_RF, 0.0),          # 擦除脉冲(负)
+        (DISTURB_NEUTRAL_WAIT, 0.0),
+        (T_RF, v_p), (t_pulse, v_p), (T_RF, 0.0),          # 编程脉冲(正,幅值可变)
+    ]:
+        backend.add_vector("gp", dt, float(vg))
+        backend.add_vector("dp", dt, 0.0)
+        t_prefix += dt
+    if delay_s > 0:
+        backend.add_vector("gp", delay_s, 0.0)
+        backend.add_vector("dp", delay_s, 0.0)
+        t_prefix += delay_s
+    windows = _build_read_phase(backend, vg_reads=[float(vg_read)], vd_read=vd_read,
+                                t_prefix=0.0, n_pts=n_pts, event_offset_s=t_prefix)
+    timeout_s = max(30.0, delay_s * 3 + t_pulse * 6 + 10.0)
+    g_df, d_df = _configure_and_run_phase(backend, measure=True, timeout_s=timeout_s)
+    return _summarize_windows(g_df, d_df, windows)
+
+
+def run_stage_mlc(backend, args) -> StageSummary:
+    """MLC 多值编程幅值扫描(PPT 第6页②):每个 +幅值 先擦除 reset 再编程,单点读 Id。
+
+    出 Id-vs-编程幅值 多值特性。擦除/脉宽/读 Vg/Vd/幅值集均可由 --mlc-* 设;默认按 PPT
+    (擦除 -4V、50µs、读 Vg0.5/Vd0.1、编程 1.5~3.8V)。
+    """
+    amps = _parse_float_list_csv(args.mlc_amps) or MLC_AMPS_DEFAULT
+    v_erase = float(args.mlc_v_erase)
+    t_pulse = float(args.mlc_width_s)
+    vg_read = float(args.mlc_read_vg)
+    vd_read = float(args.mlc_vd_read)
+    out_dir = _stage_dir(args, "MLC_program_amplitude_scan")
+    rows: list[dict] = []
+    seq = 0
+    rng = random.Random(args.seed + 12)
+    for rep in range(args.mlc_reps):
+        order = list(amps)
+        if getattr(args, "randomize_delays", True):
+            rng.shuffle(order)
+        for amp in order:
+            rr = run_mlc_shot(backend, v_erase=v_erase, v_program=float(amp),
+                              t_pulse=t_pulse, vg_read=vg_read, vd_read=vd_read, n_pts=N_PTS)
+            for r in rr:
+                rows.append({
+                    "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
+                    "stage": "MLC", "device_id": args.device_id, "geometry": args.geometry,
+                    "sequence_id": seq, "repeat_index": rep, "state_target": "PROG",
+                    "delay_s": MLC_DELAY, "dose_mode": f"prog_amp={amp:+g}", "n_read": "",
+                    **r, "note": f"mlc_erase={-abs(v_erase):+g}V_prog={amp:+g}V_tw={t_pulse:g}s",
+                })
+            _check_samples(rows[-len(rr):], "MLC")
+            _check_ig(rows[-len(rr):], "MLC", args.mlc_ig_stop_uA)
+            print(f"SHOT_OK: MLC rep={rep} prog_amp={amp:+g} seq={seq}")
+            seq += 1
+    out_csv = out_dir / "mlc_program_amplitude_scan.csv"
+    _write_rows(out_csv, rows)
+    return _summarize(args, "MLC", out_csv, rows, "MLC_PROGRAM_AMPLITUDE_DONE")
+
+
 STAGE_REGISTRY = {
     "S0": StageSpec("S0", "S0_open_fixture_smoke", "open/fixture read-only smoke", run_stage_s0),
     "S1": StageSpec("S1", "S1_device_read_only_baseline", "device read-only baseline", run_stage_s1),
@@ -1223,8 +1305,12 @@ STAGE_REGISTRY = {
     "E6R": StageSpec("E6R", "E6R_no_disturb_reference", "no-disturb reference (paired with E6D)", run_stage_e6r),
     "E6D": StageSpec("E6D", "E6D_halfVdd_disturb_delay", "half-Vdd disturb-delay", run_stage_e6d),
     "CYCLE": StageSpec("CYCLE", "CYCLE_checkpoint_endurance", "checkpointed cycle endurance", run_stage_cycle),
+    "MLC": StageSpec("MLC", "MLC_program_amplitude_scan",
+                     "multi-level program-amplitude scan (erase→program→single-point read)", run_stage_mlc),
 }
-ALL_DRY_STAGES = tuple(STAGE_REGISTRY)
+# ALL_DRY 仍是确立的 11 段冒烟基线(execute_count/max_vectors 锚点稳定);MLC 不纳入 ALL_DRY,
+# 单独经 --stage MLC + 自己的金标准回归。新增协议不扰动既有基线与契约测试。
+ALL_DRY_STAGES = ("S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE")
 
 
 def print_plan(args) -> None:
@@ -1329,6 +1415,16 @@ def parse_args(argv=None):
     ap.add_argument("--cycle-wide-vg", action="store_true", default=False,
                     help="Use E5 wide Vg grid for cycle checkpoint reads")
     ap.add_argument("--cycle-ig-stop-uA", type=float, default=30.0)
+    # MLC 多值(PPT 第6页②):擦除→编程@幅值→单点读
+    ap.add_argument("--mlc-amps", default=",".join(str(x) for x in MLC_AMPS_DEFAULT),
+                    help="MLC 编程正幅值集 V(逗号分隔),如 1.5,2.0,2.5,3.0,3.5,3.8")
+    ap.add_argument("--mlc-v-erase", type=float, default=MLC_V_ERASE,
+                    help="MLC 每次编程前擦除幅值(绝对值,实际打负);默认 4.0V")
+    ap.add_argument("--mlc-width-s", type=float, default=MLC_PULSE_WIDTH, help="MLC 擦/写脉宽 s(默认 50µs)")
+    ap.add_argument("--mlc-read-vg", type=float, default=MLC_READ_VG, help="MLC 读 Vg V(默认 0.5)")
+    ap.add_argument("--mlc-vd-read", type=float, default=MLC_READ_VD, help="MLC 读 Vd V(默认 0.1)")
+    ap.add_argument("--mlc-reps", type=int, default=3)
+    ap.add_argument("--mlc-ig-stop-uA", type=float, default=30.0)
     args = ap.parse_args(argv)
     args._argv = list(argv) if argv is not None else list(sys.argv[1:])
     return args

@@ -1,0 +1,4 @@
+timestamp_iso,stage,device_id,geometry,sequence_id,repeat_index,state_target,delay_s,dose_mode,n_read,Vg_read_V,Vd_read_V,Id_mean_A,Id_std_A,Ig_mean_A,Ig_std_A,n_d,n_g,initial_state,V_disturb_V,t_disturb_s,delay_after_disturb_s,reference_or_disturbed,note
+,S0,GOLDEN,L40W10,0,0,READ_ONLY_OPEN,,,,-0.2,0.05,8.300000000000002e-09,1.414213562373096e-10,2.0599999999999997e-07,2.828427124746193e-09,5,5,,,,,,no_write_open_or_fixture
+,S0,GOLDEN,L40W10,0,0,READ_ONLY_OPEN,,,,0.0,0.05,8.300000000000002e-09,1.414213562373096e-10,2.0599999999999997e-07,2.828427124746193e-09,5,5,,,,,,no_write_open_or_fixture
+,S0,GOLDEN,L40W10,0,0,READ_ONLY_OPEN,,,,0.2,0.05,8.300000000000002e-09,1.414213562373096e-10,2.0599999999999997e-07,2.828427124746193e-09,5,5,,,,,,no_write_open_or_fixture

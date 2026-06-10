@@ -28,6 +28,11 @@ from ..protocols.wgfmu_fefet import (
     DISTURB_DELAYS_DEFAULT,
     DISTURB_WIDTH,
     CYCLE_CHECKPOINTS_DEFAULT,
+    MLC_AMPS_DEFAULT,
+    MLC_PULSE_WIDTH,
+    MLC_READ_VD,
+    MLC_READ_VG,
+    MLC_V_ERASE,
     STAGE_REGISTRY,
 )
 from .specs import ParamKind as K
@@ -49,6 +54,7 @@ _META = {
     "E6R": ("无扰动参考", "reference"),
     "E6D": ("半Vdd 反极性扰动-延迟", "disturb-delay"),
     "CYCLE": ("检查点耐久", "endurance"),
+    "MLC": ("多值编程幅值扫描", "multi-level"),
 }
 
 
@@ -180,6 +186,21 @@ _STAGE_PARAMS: dict[str, tuple[ParamSpec, ...]] = {
                  widget=W.CHECKBOX, help="检查点读用 E5 宽 Vg 网格"),
               _ig_stop("cycle_ig_stop_uA", 30.0),
               *COMMON),
+    "MLC": (_reps("mlc_reps", 3, "重复次数"),
+            _p("mlc_amps", K.FLOAT_LIST,
+               ",".join(str(x) for x in MLC_AMPS_DEFAULT),
+               label="编程幅值集", unit="V", widget=W.CSV_LINE, vis=V.BASIC,
+               help="正编程幅值(逗号分隔),扫这些幅值出多值;对应 PPT② 1.5~3.8V"),
+            _p("mlc_v_erase", K.FLOAT, MLC_V_ERASE, label="擦除幅值", unit="V", vis=V.BASIC,
+               help="每发编程前的固定擦除幅值(绝对值,实际打负),reset 到同起点"),
+            _p("mlc_width_s", K.FLOAT, MLC_PULSE_WIDTH, label="擦/写脉宽", unit="s", vis=V.BASIC,
+               help="擦除/编程脉宽;PPT② 50µs"),
+            _p("mlc_read_vg", K.FLOAT, MLC_READ_VG, label="读 Vg", unit="V", vis=V.BASIC,
+               help="编程后单点读的 Vg;PPT③ 0.5V"),
+            _p("mlc_vd_read", K.FLOAT, MLC_READ_VD, label="读 Vd", unit="V", vis=V.BASIC,
+               help="编程后单点读的 Vd;PPT③ 0.1V"),
+            _ig_stop("mlc_ig_stop_uA", 30.0),
+            *COMMON),
 }
 
 

@@ -52,6 +52,10 @@ data/processed/
 *.pickle
 export_ascii_*.txt
 
+# 例外:金标准 CSV 必须版本控制(逐字节回归护栏的一半;否则新克隆/异机缺基线,
+# golden 测试报"缺金标准")。仅 tests/golden 下的 .norm.csv,不影响 runs/ 数据。
+!tests/golden/*.norm.csv
+
 # 日志文件
 *.log
 logs/

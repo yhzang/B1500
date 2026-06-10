@@ -19,12 +19,12 @@ from fefetlab.measurements.wgfmu.audit_backend import AuditBackend
 from fefetlab.protocols.wgfmu_fefet import DRAIN_CH, GATE_CH, parse_args
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
-STAGES = ["S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE"]
+STAGES = ["S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE", "MLC"]
 COMMON = ["--device-id", "GOLDEN", "--geometry", "L40W10", "--seed", "20260522"]
 REPS = [
     "--s0-reps", "1", "--s1-reps", "1", "--e1-reps", "1", "--e2-reps", "1",
     "--e3-reps", "1", "--e4-reps", "1", "--e5-reps", "1",
-    "--e6r-reps", "1", "--e6d-reps", "1", "--cycle-count", "1",
+    "--e6r-reps", "1", "--e6d-reps", "1", "--cycle-count", "1", "--mlc-reps", "1",
 ]
 
 
