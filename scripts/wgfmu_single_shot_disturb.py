@@ -54,12 +54,13 @@ import sys
 from pathlib import Path
 
 # --- import the existing, tested module without modifying it ----------------
-# This file is expected to live next to wgfmu_next_round_minimal.py (scripts/).
-_HERE = Path(__file__).resolve().parent
-if str(_HERE) not in sys.path:
-    sys.path.insert(0, str(_HERE))
+# M1 搬家(2026-06-10):协议逻辑已搬进 fefetlab.protocols.wgfmu_fefet;直接 import
+# 包模块复用其 backend / orchestration / 读窗积木(原来是同目录兄弟导入脚本文件)。
+_SRC = Path(__file__).resolve().parents[1] / "src"
+if str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
-import wgfmu_next_round_minimal as base  # noqa: E402  reuse backend + orchestration
+from fefetlab.protocols import wgfmu_fefet as base  # noqa: E402  reuse backend + orchestration
 
 # Pull the orchestration primitives that base imported into its namespace.
 ExperimentContext = base.ExperimentContext

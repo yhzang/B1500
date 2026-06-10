@@ -1,22 +1,18 @@
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-
 
 def _load_runner():
-    script = Path(__file__).resolve().parents[1] / "scripts" / "wgfmu_next_round_minimal.py"
-    spec = importlib.util.spec_from_file_location("wgfmu_next_round_minimal_test", script)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    # M1 搬家(2026-06-10)后协议逻辑在包内;直接 import 包模块。
+    # (原来用 importlib.spec_from_file_location 直加载 scripts/ 脚本文件,
+    #  搬家后脚本退化为薄壳、不再持有 STAGE_REGISTRY/ROOT 等符号。)
+    from fefetlab.protocols import wgfmu_fefet
+    return wgfmu_fefet
 
 
 def test_stage_registry_is_the_single_source_for_all_dry_order():
     runner = _load_runner()
 
-    assert list(runner.STAGE_REGISTRY) == ["S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6D", "CYCLE"]
+    assert list(runner.STAGE_REGISTRY) == ["S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE"]
     assert runner.ALL_DRY_STAGES == tuple(runner.STAGE_REGISTRY)
     assert runner.STAGE_REGISTRY["E1"].output_label == "E1_RAWD_QUICK300ms_v2"
     assert runner.STAGE_REGISTRY["CYCLE"].output_label == "CYCLE_checkpoint_endurance"
