@@ -17,17 +17,21 @@ def _now_tag() -> str:
 def make_stage_dir(ctx: ExperimentContext, stage: str, timestamp: str | None = None) -> Path:
     """Return the output directory for one stage.
 
-    **器件优先归集(2026-06-10)**:一个器件(``device_id`` 可自命名,如
-    ``"微所pfefet20260610"``)的所有测试都落在 ``runs/<device>/{live,dry}/<ts>_<stage>/``
-    下,便于按器件查看 / 打包 / 回流项目4。``live`` 与 ``dry`` 仍分目录,不混
-    硬件无关审计与真机输出;同一器件内各次测试按时间戳区分。
+    **批次/器件两级归集(2026-06-10)**:
+    ``runs/<device>/<die>/{live,dry}/<ts>_<stage>/``
+      * ``<device>`` = ``device_slug``:批次/自命名(如 ``微所pfefet2026``),顶层归集。
+      * ``<die>``    = ``die_slug``:批次内具体一颗器件 = 几何[_序号](如 ``L10W40_41``);
+        无 ``serial`` 时退化为纯几何。同一颗器件的全部测试聚在 ``<device>/<die>/`` 下,
+        可整目录交付项目4/2。``live`` 与 ``dry`` 仍分目录,不混硬件无关审计与真机输出;
+        同一颗内各次测试按时间戳区分。
 
-    旧布局(已废弃,2026-06-10 前的历史 run 保持原样):
-    ``runs/{live,dry}/<ts>_<stage>_<device>``。下游(项目4 回流 / 项目2 取数)按
-    新布局取数,见跨项目工作流文档。
+    旧布局(已废弃,各阶段历史 run 保持原样,不回改):
+      * 2026-06-10 前:``runs/{live,dry}/<ts>_<stage>_<device>``(扁平)。
+      * 2026-06-10 当日中段:``runs/<device>/{live,dry}/<ts>_<stage>``(器件一级,无 die)。
+    下游(项目4 回流 / 项目2 取数)按当前两级布局取数,见跨项目工作流文档。
     """
 
-    base = ctx.root / "runs" / ctx.device_slug / ("live" if ctx.live else "dry")
+    base = ctx.root / "runs" / ctx.device_slug / ctx.die_slug / ("live" if ctx.live else "dry")
     return base / f"{timestamp or _now_tag()}_{stage}"
 
 

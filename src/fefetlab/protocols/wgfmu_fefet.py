@@ -226,8 +226,9 @@ def _build_manifest(args, *, stage: str, stage_label: str, out_csv: Path, report
     return {
         "stage": stage,
         "stage_label": stage_label,
-        "device_id": args.device_id,
+        "device_id": args.device_id,                                      # 批次/自命名(顶层归集),如 微所pfefet2026
         "geometry": args.geometry,
+        "serial": (getattr(args, "serial", "") or ""),                    # 器件序号/die 号(如 41),批次内定位具体一颗。可空。
         "device_family": _device_family(args.device_id, args.geometry),  # 注:几何沟长族 L10/L20/L40,非器件类型
         "device_type": (getattr(args, "device_type", "") or ""),          # pFeFET/nFeFET/...(自报,可空,便于按类型筛选)
         "operator": (getattr(args, "operator", "") or ""),                # 测试人(自报,可空)
@@ -733,6 +734,7 @@ def _stage_dir(args, stage: str) -> Path:
         root=ROOT,
         device_id=args.device_id,
         geometry=args.geometry,
+        serial=(getattr(args, "serial", "") or ""),
         live=args.live,
         seed=args.seed,
     )
@@ -1257,8 +1259,13 @@ def parse_args(argv=None):
     ap.add_argument("--live", action="store_true", help="Open real WGFMU session and drive hardware for one stage only")
     ap.add_argument("--confirm", default="", help="Must equal selected stage in live mode, e.g. --confirm S1")
     ap.add_argument("--device-id", default="L40W10_01",
-                    help="器件标识/自命名(可中文,如 微所pfefet20260610);作为 runs/<device>/ 归集文件夹名")
-    ap.add_argument("--geometry", default="L40W10")
+                    help="批次/自命名(可中文,如 微所pfefet2026);顶层归集文件夹 runs/<device>/。"
+                         "一个批次/样品的所有器件都归在它下面。")
+    ap.add_argument("--geometry", default="L40W10",
+                    help="器件几何(沟长×沟宽),如 L10W40;与 --serial 一起构成批次内具体一颗器件 die")
+    ap.add_argument("--serial", default="",
+                    help="器件序号/die 号(如 41);与 --geometry 一起 → 二级文件夹 "
+                         "runs/<device>/<geometry>_<serial>/。可空(退化为纯几何)。")
     ap.add_argument("--device-type", default="",
                     help="器件类型(自报):pFeFET/nFeFET/...;进 manifest,便于按类型筛选。可空。")
     ap.add_argument("--operator", default="",

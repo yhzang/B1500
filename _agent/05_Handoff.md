@@ -5,6 +5,40 @@
 
 ---
 
+## 2026-06-11 → 上位机重构 M1：engine 键石已落地 + 命名(serial/die)收口；M1 余项派 codex
+
+**大背景**：项目3 从散脚本走向**测试机本地 PySide6 上位机**（远程只为开发，装好即独立运行）。设计文档 `_agent/references/B1500_GUI架构设计_PySide6.md` + `_agent/references/B1500_自定义测试配方与接线档案_设计.md`。
+
+**已落地（commit/push/测试机验证，79 passed）**：
+- **搬家**：1378 行 WGFMU CLI → `src/fefetlab/protocols/wgfmu_fefet.py`（原 `scripts/wgfmu_next_round_minimal.py` 退役）。`ALL_DRY` 审计 = **execute_count=169 / max_vectors_seen=640**（E6R/E6D 加入后；旧 96 作废）。
+- **M1 引擎键石**：`src/fefetlab/engine/`（specs/param_view/callbacks/registry/engine）。`ProtocolEngine.run(protocol_id, params, *, backend, callbacks)` = GUI/CLI **唯一执行门**，经 `ParamView` 驱动现有 11 段 `run_stage_*`，**逐字节对齐金标准**（零行为改变）。
+- **数据存储两级归集**：`runs/<device>/<die>/{live,dry}/<ts>_<stage>/`。device=`--device-id`（批次/自命名，可中文，如 `微所pfefet2026`）；die=`--geometry`+`--serial`（如 `L10W40_41`）。新增 **`--serial`**（修复序号此前并入自由文字 device-id 后丢失的回归），manifest 加 `serial`。**下游（项目4/2）读 manifest 的 device_id/geometry/serial，勿按路径深度解析**（历史有扁平/器件一级/两级三种布局并存）。
+
+**进行中**：M1 余项派 **codex**（本机 codex 在 `C:\Users\Administrator\.codex\.sandbox-bin\codex.exe`，不在 PATH）——先做**安全机械核心**：ParamSpec 逐参数枚举（registry.py 填 `params=(...)`）+ B7 常量提升（E3/E4/E5 硬编码→argparse 可设，默认值不变 → 金标准逐字节不动）+ `build_argparser`。**硬约束：79 测试全绿、ALL_DRY 169/640 不变、不碰 serial/die 代码。** 较险的 `on_shot` 接入 / DC 注册 / 去模块全局留作复核第二轮。
+
+**下一步**：椰椰给新器件需求（几何/类型/安全电压/测什么/接线）→ 翻译成 stage+参数 → S0→S1→实验链。现有 CLI 已够测，M1 余项只挡 GUI 表单自动生成，不挡测试。
+
+---
+
+## 2026-06-10 → 新方向：用后面板 Digital I/O 口自制板控制（已建档，未动工）
+
+**起因**：椰椰看后面板红框那个 D-Sub 口，想自制一块板挂上去做控制。已查官方手册核实并建档。
+
+**核实结论**（出处 `b1500 program guide/9018-01851.pdf` ch.2-71~2-87 + 命令参考）：
+- 是 **D-Sub 25 针母座**，内含 **16 路 TTL（DIO 1~16）**；官方文档完整覆盖、**可编程**（走现有 VISA/GPIB，文本命令 ERMOD/ERM/ERC/ERS?/TGP）。
+- **自制板控制成立**（官方 16440A 选择器就是经 16445A 适配器挂这个口、B1500 翻 DIO 位切 SMU↔SPGU）。
+- **纠正一个说法**：这 16 根线**不能配置/驱动 SMU/WGFMU 的测量功能**（那是总线软件的活）；它干的是 ①输出 16 位 TTL 驱动你的板子（继电器/选择器）②读外部状态做联锁 ③硬件触发同步。
+- **线**：自制板**不必买原厂线**，一根 DB-25 公头转端子的现成线即可（B1500 侧是母座，你要公头）；要原厂/BNC 才看 16493G、N1253A-100、N1253A-200。
+
+**完整档案**（引脚表/电气/命令/设计步骤/待核实项）：`_agent/references/digital_io_port_自制板控制_档案.md`。
+**测试计划 HTML**（给椰椰看的单文件，kami 视觉语言，含接线/命令/测试代码/板子架构）：`_agent/references/digital_io_测试计划.html`。
+
+**⏸ 当前挂起（等硬件）**：椰椰要先买 **DB25 公头转接线端子板**（标准两排 13+12、**公头**，因 B1500 那口是母座；淘宝搜「DB25 公头 转接线端子」）。到手插上后跑 16 线 smoke 验证：`ERMOD 0` → `ERC 2,1`（只拉低 DIO1，量哪个端子掉到~0.8V 即确认 DIO1=针15，GND=针13/25）→ 逐位翻 + `ERS?` 读回。**纯量 TTL、不接器件、零风险。** 我已提议写 `scripts/digital_io_smoke.py`（逐根翻+读回+引脚对照+preflight），等椰椰买到插头说一声就写/上机。
+
+**之后（板子方向）**：等椰椰定板子目标（路由切换 / 安全联锁 / 触发同步，可叠加）→ 画 DIO bit→功能映射表 → 在 `src/fefetlab/b1500/driver.py` 加 ERMOD/ERM/ERC/ERS?/TGP 薄封装（Mock 先行）。架构=自制版 16440A/RSU，难点只在信号完整性(SMU 保 guard/低漏、WGFMU 保快沿)。WGFMU 是否能经本口触发需另查 B1530A 手册。
+
+---
+
 ## 2026-05-26 01:33 CST → B1500_VISA_ADDR override 真机验证已过，待 commit/pull 同步
 
 **改动**：`scripts/wgfmu_next_round_minimal.py` live backend 初始化时优先读 `B1500_VISA_ADDR`；有值则直接使用并打印 `B1500_VISA_ADDR_OVERRIDE`，无值才 `autodetect_visa_addr("B1500")`。

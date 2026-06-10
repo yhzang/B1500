@@ -1,7 +1,26 @@
 # 当前状态
 
-- 更新时间：2026-05-26 01:33 CST
-- 当前目标：**B1500 stop-gated CLI 已补 `B1500_VISA_ADDR` override；真实测试机已通过 pytest / PLAN / ALL_DRY / S0 live override smoke，准备提交并同步真机 pull。**
+- 更新时间：2026-06-11 CST（claude；补正 06-10/06-11 上位机重构进度，旧 06-04 口径下沉为历史）
+- 当前目标：**把项目3 从散脚本重构成测试机本地 PySide6 上位机**（远程只为开发，装好即独立运行）。设计文档：`_agent/references/B1500_GUI架构设计_PySide6.md` + `_agent/references/B1500_自定义测试配方与接线档案_设计.md`。
+
+## 2026-06-11 上位机重构进度（权威，claude）
+- **搬家完成**：1378 行 WGFMU CLI → `src/fefetlab/protocols/wgfmu_fefet.py`（原 `scripts/wgfmu_next_round_minimal.py` 退役）。`ALL_DRY` 审计现为 **execute_count=169 / max_vectors_seen=640**（E6R/E6D 加入后；旧 96 作废）。全套 **79 passed**。
+- **M1 引擎键石 done**：`src/fefetlab/engine/`（specs / param_view / callbacks / registry / engine）。`ProtocolEngine.run(protocol_id, params, *, backend, callbacks)` = GUI/CLI 共用**唯一执行门**，经 `ParamView` 驱动现有 11 段 `run_stage_*`，**逐字节对齐金标准**（收口零行为改变）。`REGISTRY` 把 11 段升格 `ProtocolSpec`（`params=()` 待枚举）。已 commit/push/测试机验证（engine.run 14 passed + ALL_DRY 169/640）。
+- **数据存储两级归集**：`runs/<device>/<die>/{live,dry}/<ts>_<stage>/`。device=`--device-id`（批次/自命名，可中文，如 `微所pfefet2026`，顶层归集）；die=`--geometry`+`--serial`（如 `L10W40_41`）。新增 **`--serial`** 字段（修复序号此前并入自由文字 device-id 后丢失的回归），manifest 加 `serial`。**下游（项目4/2）按 manifest 的 device_id/geometry/serial 取值，勿按路径深度解析**——历史上有"扁平 / 器件一级 / 两级"三种布局并存。
+- **M1 余项（未做）**：ParamSpec 逐参数枚举 + B7 常量提升（E3/E4/E5 硬编码→可设）+ `build_argparser` + `on_shot` 接入 runner + DC 注册 + 去模块全局（线程安全）。**注：本机未装 codex**，无法外派；要么 claude 自做，要么先装 codex。M1 余项只挡 GUI 表单自动生成，**不挡新器件测试**（现有 CLI 已够测）。
+- **下一步**：椰椰给新器件需求（几何 / 类型 / 安全电压 / 测什么 / 接线）→ 翻译成 stage+参数 → S0→S1→实验链。
+
+---
+
+## 历史状态（2026-06-04 及更早，已被上方 06-11 进度取代）
+
+- 旧目标：**为项目4 脆弱-L10 单写协议供脚本。** 分析机代码已 commit+push 到 GitHub 并与 origin/main 完全同步；`B1500_VISA_ADDR` override 已并入提交（在彼时的 `scripts/wgfmu_next_round_minimal.py`，现已搬家到 `src/fefetlab/protocols/wgfmu_fefet.py`）。
+
+## 2026-06-04 核实：git / 测试机同步现状（claude）
+- **分析机 ↔ GitHub：完全同步**（`main` 0 ahead / 0 behind origin/main，HEAD `5a9347d`）。提交一路到今天：`a64e9eb` 加 E6S/E1S/E6M 单写脚本(06-03)、`497094…` 停门落盘+脆弱点读控、`3cca503` `--write-state` 单极性写、`5a9347d` 读量程默认 100UA(06-04)。
+- **2026-05-26 那条"准备 commit/push + 真机 git pull"已部分作废**：commit/push 早做完；但**真机 git pull 的做法是错的**——测试机 git 已岔开（停在 5-28 `7389f01`，与 origin 两条线），脚本在测试机 untracked/有本地改动，pull 会冲突。**正解：scp 覆盖脚本，不碰其 git**（详见 `_agent/runbooks/git-sync-and-test-machine.md`，今日新建、尚未提交）。
+- **未决/风险**：项目4 State 记的"三处字节一致"是 06-03 状态；今天 06-04 的 3 个脚本修复（100UA 读量程 / `--write-state` 单写 / 停门落盘）**可能尚未 scp 到测试机**。本次核实时测试机 SSH 不可达（TCP 经 Tailscale 通，但 SSH banner 超时，机器疑似关机/休眠——公司公共电脑，晚间），**未能验证测试机当前脚本哈希**。下次上机前必须先 scp 这三处改动并 SHA256 双向核对。
+- git push 直连 GitHub 被 GFW 卡，需走本机 Clash 代理 `http://127.0.0.1:7897`（见同上 runbook）。
 
 ## 2026-05-26 B1500_VISA_ADDR override 已验证
 
@@ -13,7 +32,7 @@
   - `--stage ALL_DRY ... --cycle-count 1` → `DRY_RUN_AUDIT: execute_count=96 max_vectors_seen=640`。
   - `set B1500_VISA_ADDR=GPIB1::17::INSTR && ... --stage S0 --live --confirm S0 --device-id ENV_OVERRIDE_TEST --geometry OPEN --s0-reps 1` → `B1500_VISA_ADDR_OVERRIDE: GPIB1::17::INSTR`、`WGFMU_CHANNELS: [201, 202, 301, 302]`、`REPORT_CODE: S0_DONE_PROCEED_TO_S1_IF_PROBES_ON_DEVICE`。
 - 真机覆盖前备份：`D:\test\B1500\_agent\remote_backup_before_hermes_test_20260526_012839\`。
-- 下一步：本地 commit/push 后，真机 `git pull origin main` 同步。
+- 下一步（2026-06-04 已更正）：commit/push 已完成；真机**不要 pull**（git 已岔开），改用 scp 覆盖脚本 + SHA256 双向核对，见 `_agent/runbooks/git-sync-and-test-machine.md`。
 
 
 ## 2026-05-22 下一轮 stop-gated WGFMU 上机流程已落地

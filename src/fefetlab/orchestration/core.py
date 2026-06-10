@@ -24,17 +24,32 @@ class StopGate(RuntimeError):
 
 @dataclass(frozen=True)
 class ExperimentContext:
-    """Shared run context for script wrappers and package-level adapters."""
+    """Shared run context for script wrappers and package-level adapters.
+
+    器件身份(2026-06-10 两级归集)分两层:
+      * ``device_id``  = 批次/自命名,如 ``"微所pfefet2026"`` —— 顶层归集文件夹(``device_slug``)。
+      * ``geometry`` + ``serial`` = 批次内**具体一颗器件**(die),如 L10W40 第 41 号 —— 二级文件夹
+        (``die_slug`` = ``L10W40_41``)。``serial`` 缺省为空时 ``die_slug`` 退化为纯几何。
+    """
 
     root: Path
     device_id: str
     geometry: str
+    serial: str = ""
     live: bool = False
     seed: int | None = None
 
     @property
     def device_slug(self) -> str:
+        """批次/自命名,顶层归集文件夹,如 微所pfefet2026。"""
         return _slug(self.device_id)
+
+    @property
+    def die_slug(self) -> str:
+        """批次内具体一颗器件 = 几何[_序号],如 L10W40_41;无序号时退化为纯几何。"""
+        s = str(self.serial).strip()
+        base = str(self.geometry)
+        return _slug(f"{base}_{s}" if s else base)
 
 
 @dataclass(frozen=True)

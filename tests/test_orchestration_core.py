@@ -44,23 +44,29 @@ def test_live_request_requires_single_confirmed_stage():
     assert exc.value.code == "SETUP_STOP_CONFIRM_REQUIRED_E1"
 
 
-def test_export_context_groups_by_device_then_live_dryrun(tmp_path):
-    # 2026-06-10 器件优先归集:runs/<device>/{live,dry}/<ts>_<stage>。
-    # 自命名器件(含中文/空格/斜杠)经 _slug 清洗后作为器件文件夹名。
-    live_ctx = ExperimentContext(root=tmp_path, device_id="L10 W10/01", geometry="L10", live=True)
-    live_dir = make_stage_dir(live_ctx, "E1_RAWD", timestamp="20260526_210000")
-    assert live_dir.parent == tmp_path / "runs" / "L10_W10_01" / "live"
-    assert live_dir.name == "20260526_210000_E1_RAWD"
+def test_export_context_groups_by_device_then_die_then_live_dryrun(tmp_path):
+    # 2026-06-10 批次/器件两级归集:runs/<device>/<die>/{live,dry}/<ts>_<stage>。
+    #   device = device_id(批次/自命名,可中文/空格/斜杠,经 _slug 清洗);
+    #   die    = geometry[_serial](批次内具体一颗,如 L10W40_41);无 serial 退化为纯几何。
+    live_ctx = ExperimentContext(
+        root=tmp_path, device_id="微所pfefet2026", geometry="L10W40", serial="41", live=True
+    )
+    live_dir = make_stage_dir(live_ctx, "E1_RAWD", timestamp="20260610_210000")
+    assert live_dir.parent == tmp_path / "runs" / "微所pfefet2026" / "L10W40_41" / "live"
+    assert live_dir.name == "20260610_210000_E1_RAWD"
 
-    dry_ctx = ExperimentContext(root=tmp_path, device_id="DRY", geometry="NA", live=False)
-    dry_dir = make_stage_dir(dry_ctx, "ALL_DRY", timestamp="20260526_210001")
-    assert dry_dir.parent == tmp_path / "runs" / "DRY" / "dry"
-    assert dry_dir.name == "20260526_210001_ALL_DRY"
+    # 序号缺省 → die 退化为纯几何;自命名含空格/斜杠经 _slug 清洗。
+    nos_ctx = ExperimentContext(root=tmp_path, device_id="L10 W10/01", geometry="L10", live=False)
+    nos_dir = make_stage_dir(nos_ctx, "ALL_DRY", timestamp="20260610_210001")
+    assert nos_dir.parent == tmp_path / "runs" / "L10_W10_01" / "L10" / "dry"
+    assert nos_dir.name == "20260610_210001_ALL_DRY"
 
-    # 自命名中文器件名应原样保留(CJK 视作 alnum,_slug 不破坏)。
-    cn_ctx = ExperimentContext(root=tmp_path, device_id="微所pfefet20260610", geometry="L40W10", live=True)
-    cn_dir = make_stage_dir(cn_ctx, "S0", timestamp="20260610_120000")
-    assert cn_dir.parent == tmp_path / "runs" / "微所pfefet20260610" / "live"
+    # 同批次另一颗(同 device,不同 die)自然分到平行子目录;中文 device 名原样保留。
+    sib_ctx = ExperimentContext(
+        root=tmp_path, device_id="微所pfefet2026", geometry="L20W10", serial="7", live=True
+    )
+    sib_dir = make_stage_dir(sib_ctx, "S0", timestamp="20260610_120000")
+    assert sib_dir.parent == tmp_path / "runs" / "微所pfefet2026" / "L20W10_7" / "live"
 
 
 def test_write_rows_and_summary_emit_same_contract(tmp_path, capsys):
