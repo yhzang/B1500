@@ -1,0 +1,103 @@
+"""M1 验收 · ProtocolEngine.run 驱动 11 段 dry,逐字节对齐金标准。
+
+证明:GUI/CLI 将调的统一执行门 `engine.run(protocol_id, params, backend=...)` 通过 `ParamView`
+驱动**现有** `run_stage_*`,产出与 CLI(金标准 `tests/golden/<stage>.norm.csv`)**逐字节一致**
+(抹时间戳)。即引擎收口没有改变任何协议行为——这正是 §11 M1 验收"假 EngineCallbacks 跑通
+11 阶段 dry + CSV 逐字节"。
+"""
+from __future__ import annotations
+
+import csv
+import io
+import shutil
+from pathlib import Path
+
+import pytest
+
+from fefetlab.engine import ProtocolEngine, REGISTRY, RecordingCallbacks
+from fefetlab.measurements.wgfmu.audit_backend import AuditBackend
+from fefetlab.protocols.wgfmu_fefet import DRAIN_CH, GATE_CH, parse_args
+
+GOLDEN_DIR = Path(__file__).parent / "golden"
+STAGES = ["S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE"]
+COMMON = ["--device-id", "GOLDEN", "--geometry", "L40W10", "--seed", "20260522"]
+REPS = [
+    "--s0-reps", "1", "--s1-reps", "1", "--e1-reps", "1", "--e2-reps", "1",
+    "--e3-reps", "1", "--e4-reps", "1", "--e5-reps", "1",
+    "--e6r-reps", "1", "--e6d-reps", "1", "--cycle-count", "1",
+]
+
+
+def _dry_backend() -> AuditBackend:
+    """复刻 make_backend 的 dry 分支:AuditBackend + open_session + FIX A/B 占位。"""
+    b = AuditBackend(gate_ch=GATE_CH, drain_ch=DRAIN_CH, channels=[201, 202, 301, 302])
+    b.open_session("DUMMY::WGFMU")
+    b._fefet_visa_addr = "DUMMY::WGFMU"
+    b._fefet_wgfmu_initialized = False
+    return b
+
+
+def _normalize_csv(csv_file: Path) -> str:
+    with csv_file.open(newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    if not rows:
+        return ""
+    ti = rows[0].index("timestamp_iso") if "timestamp_iso" in rows[0] else -1
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    for i, row in enumerate(rows):
+        if i > 0 and 0 <= ti < len(row):
+            row = list(row)
+            row[ti] = ""
+        w.writerow(row)
+    return buf.getvalue()
+
+
+def _cleanup(out_csv: Path) -> None:
+    for anc in out_csv.parents:
+        if anc.name == "GOLDEN":
+            shutil.rmtree(anc, ignore_errors=True)
+            break
+
+
+def test_registry_covers_all_eleven_stages():
+    assert set(REGISTRY) == set(STAGES)
+    for sid in STAGES:
+        assert callable(REGISTRY[sid].runner)
+        assert REGISTRY[sid].family == "WGFMU"
+
+
+@pytest.mark.parametrize("stage", STAGES)
+def test_engine_run_byte_identical_to_golden(stage: str):
+    params = vars(parse_args(["--stage", stage, *COMMON, *REPS]))
+    backend = _dry_backend()
+    cb = RecordingCallbacks()
+    out_csv = None
+    try:
+        summary = ProtocolEngine().run(stage, params, backend=backend, callbacks=cb)
+        out_csv = Path(summary.out_csv)
+        normalized = _normalize_csv(out_csv)
+    finally:
+        if out_csv is not None:
+            _cleanup(out_csv)
+
+    golden = GOLDEN_DIR / f"{stage}.norm.csv"
+    assert golden.exists(), f"缺金标准 {golden}(先跑 GOLDEN_REGEN=1)"
+    assert normalized == golden.read_text(encoding="utf-8"), f"{stage} engine.run 输出与金标准(CLI)漂移"
+    # 引擎门确实发了 on_stage_done(带 report_code)
+    assert ("stage_done", summary.report_code) in cb.events
+
+
+def test_engine_run_unknown_protocol_raises():
+    with pytest.raises(KeyError):
+        ProtocolEngine().run("NOPE", {}, backend=_dry_backend())
+
+
+def test_engine_run_live_without_confirm_is_blocked():
+    from fefetlab.orchestration.core import StopGate
+
+    params = vars(parse_args(["--stage", "S0", *COMMON, *REPS, "--live"]))
+    cb = RecordingCallbacks()
+    with pytest.raises(StopGate):
+        ProtocolEngine().run("S0", params, backend=_dry_backend(), callbacks=cb, confirm="")
+    assert any(e[0] == "stop_gate" for e in cb.events)
