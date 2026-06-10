@@ -114,9 +114,19 @@ def _run_stage_capture(stage: str) -> tuple[str, str]:
     try:
         normalized = _normalize_csv(csv_path)
     finally:
-        run_dir = csv_path.parent
-        if run_dir.exists() and run_dir.name.endswith("GOLDEN"):
-            shutil.rmtree(run_dir, ignore_errors=True)
+        # 清理本次产生的 run,避免堆积。
+        # 新布局 runs/{dry}/GOLDEN/<ts>_<stage>/ → 删器件文件夹 GOLDEN;
+        # 兼容旧平铺 runs/{dry}/<ts>_<stage>_GOLDEN/。
+        target = None
+        if csv_path.parent.name.endswith("GOLDEN"):
+            target = csv_path.parent
+        else:
+            for anc in csv_path.parents:
+                if anc.name == "GOLDEN":
+                    target = anc
+                    break
+        if target is not None and target.exists():
+            shutil.rmtree(target, ignore_errors=True)
     return report_code or "", normalized
 
 

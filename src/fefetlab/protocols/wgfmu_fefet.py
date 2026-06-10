@@ -228,7 +228,9 @@ def _build_manifest(args, *, stage: str, stage_label: str, out_csv: Path, report
         "stage_label": stage_label,
         "device_id": args.device_id,
         "geometry": args.geometry,
-        "device_family": _device_family(args.device_id, args.geometry),
+        "device_family": _device_family(args.device_id, args.geometry),  # 注:几何沟长族 L10/L20/L40,非器件类型
+        "device_type": (getattr(args, "device_type", "") or ""),          # pFeFET/nFeFET/...(自报,可空,便于按类型筛选)
+        "operator": (getattr(args, "operator", "") or ""),                # 测试人(自报,可空)
         "live": bool(args.live),
         "plan_mode_equivalent": not bool(args.live),
         "seed": args.seed,
@@ -1254,8 +1256,13 @@ def parse_args(argv=None):
     ap.add_argument("--stage", choices=["PLAN", *STAGE_REGISTRY.keys(), "ALL_DRY"], default="PLAN")
     ap.add_argument("--live", action="store_true", help="Open real WGFMU session and drive hardware for one stage only")
     ap.add_argument("--confirm", default="", help="Must equal selected stage in live mode, e.g. --confirm S1")
-    ap.add_argument("--device-id", default="L40W10_01")
+    ap.add_argument("--device-id", default="L40W10_01",
+                    help="器件标识/自命名(可中文,如 微所pfefet20260610);作为 runs/<device>/ 归集文件夹名")
     ap.add_argument("--geometry", default="L40W10")
+    ap.add_argument("--device-type", default="",
+                    help="器件类型(自报):pFeFET/nFeFET/...;进 manifest,便于按类型筛选。可空。")
+    ap.add_argument("--operator", default="",
+                    help="测试人(自报):进 manifest。可空。")
     ap.add_argument("--gate-ch", type=int, default=DEFAULT_GATE_CH,
                     help="WGFMU channel connected to Gate; default matches yhzang fixture")
     ap.add_argument("--drain-ch", type=int, default=DEFAULT_DRAIN_CH,

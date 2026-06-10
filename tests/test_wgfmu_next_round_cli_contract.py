@@ -34,7 +34,7 @@ def test_e6d_disturb_delay_dry_run_records_disturb_metadata(tmp_path, monkeypatc
     ])
 
     assert rc == 0
-    csvs = list((tmp_path / "runs" / "dry").glob("*/e6d_halfvdd_disturb_delay.csv"))
+    csvs = list((tmp_path / "runs").glob("**/e6d_halfvdd_disturb_delay.csv"))
     assert len(csvs) == 1
     text = csvs[0].read_text(encoding="utf-8")
     assert "V_disturb_V" in text
@@ -58,7 +58,7 @@ def test_cycle_checkpoint_dry_run_stresses_in_chunks_and_reads_only_checkpoints(
     ])
 
     assert rc == 0
-    csvs = list((tmp_path / "runs" / "dry").glob("*/cycle_checkpoint_endurance.csv"))
+    csvs = list((tmp_path / "runs").glob("**/cycle_checkpoint_endurance.csv"))
     assert len(csvs) == 1
     text = csvs[0].read_text(encoding="utf-8")
     assert "checkpoint_cycle=10_stress_then_read" in text
@@ -88,7 +88,7 @@ def test_cli_dry_run_writes_manifest_with_device_and_configurable_channels(tmp_p
     assert "CHANNELS_OK: Gate=301, Drain=202" in out
     assert "REPORT_CODE: S0_DONE_PROCEED_TO_S1_IF_PROBES_ON_DEVICE" in out
 
-    manifests = list((tmp_path / "runs" / "dry").glob("*/manifest.yaml"))
+    manifests = list((tmp_path / "runs").glob("**/manifest.yaml"))
     assert len(manifests) == 1
     text = manifests[0].read_text(encoding="utf-8")
     assert "stage: S0" in text
@@ -103,6 +103,6 @@ def test_cli_dry_run_writes_manifest_with_device_and_configurable_channels(tmp_p
     assert "live: false" in text
     assert "plan_mode_equivalent: true" in text
 
-    summaries = list((tmp_path / "runs" / "dry").glob("*/summary.md"))
+    summaries = list((tmp_path / "runs").glob("**/summary.md"))
     assert len(summaries) == 1
     assert "# S0" in summaries[0].read_text(encoding="utf-8")
