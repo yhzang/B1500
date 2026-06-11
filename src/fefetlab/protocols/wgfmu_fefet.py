@@ -1265,6 +1265,8 @@ def run_stage_mlc(backend, args) -> StageSummary:
     t_pulse = float(args.mlc_width_s)
     vg_read = float(args.mlc_read_vg)
     vd_read = float(args.mlc_vd_read)
+    delay_s = float(args.mlc_delay_s)
+    n_pts = int(args.mlc_n_pts)
     out_dir = _stage_dir(args, "MLC_program_amplitude_scan")
     rows: list[dict] = []
     seq = 0
@@ -1275,13 +1277,14 @@ def run_stage_mlc(backend, args) -> StageSummary:
             rng.shuffle(order)
         for amp in order:
             rr = run_mlc_shot(backend, v_erase=v_erase, v_program=float(amp),
-                              t_pulse=t_pulse, vg_read=vg_read, vd_read=vd_read, n_pts=N_PTS)
+                              t_pulse=t_pulse, vg_read=vg_read, vd_read=vd_read,
+                              n_pts=n_pts, delay_s=delay_s)
             for r in rr:
                 rows.append({
                     "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
                     "stage": "MLC", "device_id": args.device_id, "geometry": args.geometry,
                     "sequence_id": seq, "repeat_index": rep, "state_target": "PROG",
-                    "delay_s": MLC_DELAY, "dose_mode": f"prog_amp={amp:+g}", "n_read": "",
+                    "delay_s": delay_s, "dose_mode": f"prog_amp={amp:+g}", "n_read": "",
                     **r, "note": f"mlc_erase={-abs(v_erase):+g}V_prog={amp:+g}V_tw={t_pulse:g}s",
                 })
             _check_samples(rows[-len(rr):], "MLC")
@@ -1423,6 +1426,8 @@ def parse_args(argv=None):
     ap.add_argument("--mlc-width-s", type=float, default=MLC_PULSE_WIDTH, help="MLC 擦/写脉宽 s(默认 50µs)")
     ap.add_argument("--mlc-read-vg", type=float, default=MLC_READ_VG, help="MLC 读 Vg V(默认 0.5)")
     ap.add_argument("--mlc-vd-read", type=float, default=MLC_READ_VD, help="MLC 读 Vd V(默认 0.1)")
+    ap.add_argument("--mlc-delay-s", type=float, default=MLC_DELAY, help="MLC 编程→读延迟 s(默认 10µs)")
+    ap.add_argument("--mlc-n-pts", type=int, default=N_PTS, help="MLC 单点读的硬件平均点数(默认 5)")
     ap.add_argument("--mlc-reps", type=int, default=3)
     ap.add_argument("--mlc-ig-stop-uA", type=float, default=30.0)
     args = ap.parse_args(argv)

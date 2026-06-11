@@ -29,10 +29,12 @@ from ..protocols.wgfmu_fefet import (
     DISTURB_WIDTH,
     CYCLE_CHECKPOINTS_DEFAULT,
     MLC_AMPS_DEFAULT,
+    MLC_DELAY,
     MLC_PULSE_WIDTH,
     MLC_READ_VD,
     MLC_READ_VG,
     MLC_V_ERASE,
+    N_PTS,
     STAGE_REGISTRY,
 )
 from .specs import ParamKind as K
@@ -199,6 +201,10 @@ _STAGE_PARAMS: dict[str, tuple[ParamSpec, ...]] = {
                help="编程后单点读的 Vg;PPT③ 0.5V"),
             _p("mlc_vd_read", K.FLOAT, MLC_READ_VD, label="读 Vd", unit="V", vis=V.BASIC,
                help="编程后单点读的 Vd;PPT③ 0.1V"),
+            _p("mlc_delay_s", K.FLOAT, MLC_DELAY, label="编程→读延迟", unit="s", vis=V.ADVANCED,
+               help="编程脉冲到读取之间的延迟"),
+            _p("mlc_n_pts", K.INT, N_PTS, label="读平均点数", vis=V.ADVANCED, widget=W.SPINBOX,
+               minimum=1, help="单点读的硬件平均采样点数"),
             _ig_stop("mlc_ig_stop_uA", 30.0),
             *COMMON),
 }
