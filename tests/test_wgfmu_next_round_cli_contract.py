@@ -130,3 +130,27 @@ def test_out_root_default_is_empty_falls_back_to_root():
     runner = _load_runner()
     args = runner.parse_args(["--stage", "S0", "--device-id", "D", "--geometry", "L40W10"])
     assert getattr(args, "out_root", None) == ""
+
+
+def test_increment4_global_injection_irange_npts_rawmode():
+    """增量4:--n-pts/--read-irange-*/--raw-data-mode 经 configure_channel_map 注入运行时全局;
+    默认回退不可变 DEFAULT_*(行为保持)。波形构建处零改动即生效。"""
+    runner = _load_runner()
+    base = ["--stage", "S0", "--device-id", "D", "--geometry", "L40W10"]
+    # 默认 → DEFAULT_*(保证默认行为不变)
+    runner.configure_channel_map(runner.parse_args(base))
+    assert runner.N_PTS == runner.DEFAULT_N_PTS
+    assert runner.MEAS_IRANGE_GATE == runner.DEFAULT_MEAS_IRANGE_GATE
+    assert runner.MEAS_IRANGE_DRAIN == runner.DEFAULT_MEAS_IRANGE_DRAIN
+    assert runner.RAW_DATA_MODE == runner.DEFAULT_RAW_DATA_MODE
+    # 覆盖 → 注入运行时全局
+    runner.configure_channel_map(runner.parse_args(base + [
+        "--n-pts", "9", "--read-irange-gate", "10UA",
+        "--read-irange-drain", "1UA", "--raw-data-mode", "raw"]))
+    assert runner.N_PTS == 9
+    assert runner.MEAS_IRANGE_GATE == "10UA"
+    assert runner.MEAS_IRANGE_DRAIN == "1UA"
+    assert runner.RAW_DATA_MODE == "raw"
+    # 还原默认,避免污染其它测试(运行时全局)
+    runner.configure_channel_map(runner.parse_args(base))
+    assert runner.N_PTS == runner.DEFAULT_N_PTS

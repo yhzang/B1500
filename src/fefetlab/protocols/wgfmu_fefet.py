@@ -63,14 +63,20 @@ T_RESET = 1e-3
 T_WRITE = 100e-6
 T_READ = 5e-6
 T_NEUTRAL = 100e-6
-N_PTS = 5
+DEFAULT_N_PTS = 5
+N_PTS = DEFAULT_N_PTS              # 运行时全局;configure_channel_map 按 --n-pts 注入(波形构建处零改动即生效)
 # Read-phase current measure range per channel. Valid: 1UA/10UA/100UA/1MA/10MA.
 # DRAIN default LOWERED to 100UA (2026-06-04) for resolution on uA-level reads;
-# GATE stays 1MA (gate leakage can be large). Override per run via
-# --read-irange-drain / --read-irange-gate (those win over these defaults).
-# >>> To change the CAMPAIGN default range later, edit the two lines below. <<<
-MEAS_IRANGE_GATE = "1MA"
-MEAS_IRANGE_DRAIN = "100UA"
+# GATE stays 1MA (gate leakage can be large). 增量4:提升为 --read-irange-gate/drain,
+# configure_channel_map 注入运行时全局;DEFAULT_* 为不可变默认(flag/ParamSpec 用)。
+IRANGE_CHOICES = ("1UA", "10UA", "100UA", "1MA", "10MA")
+RAW_DATA_MODE_CHOICES = ("averaged", "raw")
+DEFAULT_MEAS_IRANGE_GATE = "1MA"
+DEFAULT_MEAS_IRANGE_DRAIN = "100UA"
+DEFAULT_RAW_DATA_MODE = "averaged"
+MEAS_IRANGE_GATE = DEFAULT_MEAS_IRANGE_GATE      # 运行时全局,configure_channel_map 注入
+MEAS_IRANGE_DRAIN = DEFAULT_MEAS_IRANGE_DRAIN
+RAW_DATA_MODE = DEFAULT_RAW_DATA_MODE
 # Default write amplitudes = paper standard +/-5 V. Use --write-v to override per run
 # (e.g. --write-v 4 -> ERS=+4 V / PGM=-4 V); no temporary voltage is hard-coded here.
 V_ERS = +5.0
@@ -199,6 +205,7 @@ def configure_channel_map(args) -> None:
     """
 
     global GATE_CH, DRAIN_CH, ALLOWED_CHANNELS, FORBIDDEN_CHANNELS
+    global N_PTS, RAW_DATA_MODE, MEAS_IRANGE_GATE, MEAS_IRANGE_DRAIN
     gate = int(args.gate_ch)
     drain = int(args.drain_ch)
     allowed = _parse_int_csv(args.allowed_channels)
@@ -219,6 +226,12 @@ def configure_channel_map(args) -> None:
     DRAIN_CH = drain
     ALLOWED_CHANNELS = allowed
     FORBIDDEN_CHANNELS = forbidden
+    # 读窗参数(增量4):一次性注入运行时全局,波形构建处零改动即生效。
+    # 缺键/空 → 回退不可变 DEFAULT_*(保证默认行为逐字节不变,golden 169/640 不动)。
+    N_PTS = int(getattr(args, "n_pts", None) or DEFAULT_N_PTS)
+    RAW_DATA_MODE = getattr(args, "raw_data_mode", None) or DEFAULT_RAW_DATA_MODE
+    MEAS_IRANGE_GATE = getattr(args, "read_irange_gate", None) or DEFAULT_MEAS_IRANGE_GATE
+    MEAS_IRANGE_DRAIN = getattr(args, "read_irange_drain", None) or DEFAULT_MEAS_IRANGE_DRAIN
 
 
 def _device_family(device_id: str, geometry: str) -> str:
@@ -490,8 +503,8 @@ def _build_read_phase(backend, *, vg_reads: list[float], vd_read: float, t_prefi
         backend.add_vector("dp", T_RF, 0.0)
     for w in windows:
         i = w["idx"]
-        backend.set_measure_event("gp", f"g{i}", w["t0"], n_pts, interval, average, "averaged")
-        backend.set_measure_event("dp", f"d{i}", w["t0"], n_pts, interval, average, "averaged")
+        backend.set_measure_event("gp", f"g{i}", w["t0"], n_pts, interval, average, RAW_DATA_MODE)
+        backend.set_measure_event("dp", f"d{i}", w["t0"], n_pts, interval, average, RAW_DATA_MODE)
     return windows
 
 
@@ -1590,7 +1603,7 @@ def parse_args(argv=None):
     ap.add_argument("--mlc-read-vg", type=float, default=MLC_READ_VG, help="MLC 读 Vg V(默认 0.5)")
     ap.add_argument("--mlc-vd-read", type=float, default=MLC_READ_VD, help="MLC 读 Vd V(默认 0.1)")
     ap.add_argument("--mlc-delay-s", type=float, default=MLC_DELAY, help="MLC 编程→读延迟 s(默认 10µs)")
-    ap.add_argument("--mlc-n-pts", type=int, default=N_PTS, help="MLC 单点读的硬件平均点数(默认 5)")
+    ap.add_argument("--mlc-n-pts", type=int, default=DEFAULT_N_PTS, help="MLC 单点读的硬件平均点数(默认 5)")
     ap.add_argument("--mlc-reps", type=int, default=3)
     ap.add_argument("--mlc-ig-stop-uA", type=float, default=30.0)
     # ISPP 闭环增量步进编程(项目5):每炮读 Id 决定下一炮,EasyEXPERT 开环模板做不到的闭环
@@ -1608,6 +1621,14 @@ def parse_args(argv=None):
     ap.add_argument("--ispp-vd-read", type=float, default=ISPP_VD_READ, help="ISPP 读出 Vd V")
     ap.add_argument("--ispp-read-delay-s", type=float, default=ISPP_READ_DELAY, help="ISPP 编程→读延迟 s")
     ap.add_argument("--ispp-ig-stop-uA", type=float, default=30.0, help="ISPP |Ig| 停门 µA")
+    # 读窗参数(增量4):提升为可调,configure_channel_map 注入运行时全局
+    ap.add_argument("--n-pts", type=int, default=DEFAULT_N_PTS, help="读窗硬件平均点数(默认 5)")
+    ap.add_argument("--raw-data-mode", default=DEFAULT_RAW_DATA_MODE, choices=RAW_DATA_MODE_CHOICES,
+                    help="读出数据模式 averaged/raw(raw 数据量大,仅限短采样)")
+    ap.add_argument("--read-irange-gate", default=DEFAULT_MEAS_IRANGE_GATE, choices=IRANGE_CHOICES,
+                    help="Gate 读电流量程")
+    ap.add_argument("--read-irange-drain", default=DEFAULT_MEAS_IRANGE_DRAIN, choices=IRANGE_CHOICES,
+                    help="Drain 读电流量程")
     # 输出根目录(GUI 上位机用;空 = 仓库默认 runs/)。run 级设置,非 ParamSpec。
     ap.add_argument("--out-root", default="", help="输出根目录(空=仓库默认 runs/)")
     args = ap.parse_args(argv)
