@@ -53,3 +53,52 @@ def test_mainwindow_constructs():
     win = MainWindow()
     assert win.protocol_panel is not None
     assert win.controller is not None
+
+
+def test_plotpanel_realtime_append_accumulates():
+    """逐炮 on_shot 增量图:append_shot_rows 累积进缓冲,_flush_live 后每个 state 一条曲线。"""
+    pytest.importorskip("pyqtgraph")
+    _ensure_app()
+    from gui.plot_panel import PlotPanel
+
+    pp = PlotPanel()
+    pp.begin_live_plot("fefet_fixedcols", live=False)
+    assert pp._live_active is True
+    pp.append_shot_rows("E1", 0, [
+        {"state_target": "ERS", "delay_s": 1e-5, "Id_mean_A": 1.0e-6},
+        {"state_target": "PGM", "delay_s": 1e-5, "Id_mean_A": -2.0e-6},
+    ])
+    pp.append_shot_rows("E1", 1, [
+        {"state_target": "ERS", "delay_s": 1e-3, "Id_mean_A": 1.1e-6},
+        {"state_target": "PGM", "delay_s": 1e-3, "Id_mean_A": -2.1e-6},
+    ])
+    pp._flush_live()
+    assert set(pp._live_items) == {"ERS", "PGM"}
+    for state in ("ERS", "PGM"):
+        xs, ys = pp._live_items[state].getData()
+        assert len(xs) == 2 and len(ys) == 2  # 两炮各一点
+
+    # 非实时 schema:begin 不启用实时,append 被忽略,无曲线
+    pp.begin_live_plot("dc", live=False)
+    assert pp._live_active is False
+    pp.append_shot_rows("DC", 0, [{"state_target": "ERS", "delay_s": 1, "Id_mean_A": 1e-6}])
+    pp._flush_live()
+    assert pp._live_items == {}
+
+
+def test_plotpanel_realtime_skips_nan_and_missing():
+    """缺 Id_mean_A / 非数值的行被跳过,不进缓冲。"""
+    pytest.importorskip("pyqtgraph")
+    _ensure_app()
+    from gui.plot_panel import PlotPanel
+
+    pp = PlotPanel()
+    pp.begin_live_plot("fefet_fixedcols", live=False)
+    pp.append_shot_rows("E1", 0, [
+        {"state_target": "ERS", "delay_s": 1e-5, "Id_mean_A": ""},      # 空 → 跳过
+        {"state_target": "ERS", "delay_s": 1e-5},                        # 缺列 → 跳过
+        {"state_target": "ERS", "delay_s": 1e-5, "Id_mean_A": 5.0e-7},  # 有效
+    ])
+    pp._flush_live()
+    xs, ys = pp._live_items["ERS"].getData()
+    assert len(xs) == 1 and ys[0] == 5.0e-7

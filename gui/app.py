@@ -65,6 +65,7 @@ class MainWindow(QMainWindow):
         c = self.controller
         c.logMsg.connect(self.log_panel.append)
         c.planReady.connect(self.plot_panel.show_waveform)
+        c.shot.connect(self.plot_panel.append_shot_rows)   # 逐炮实时增量图
         c.progress.connect(self.run_control.set_progress)
         c.stageDone.connect(self._on_stage_done)
         c.stopGate.connect(self._on_stop_gate)
@@ -110,6 +111,14 @@ class MainWindow(QMainWindow):
             return
         self._last_stage = stage
         self._last_live = live
+        # 开启逐炮实时图(controller.shot 已转发 worker.shot;begin 在 shot 到达前同步执行)
+        try:
+            from fefetlab.engine import REGISTRY
+
+            schema = REGISTRY[stage].csv_schema
+        except Exception:  # noqa: BLE001
+            schema = ""
+        self.plot_panel.begin_live_plot(schema, live=live)
         self.run_control.set_status(f"运行中:{stage}（{'live' if live else 'dry'}）")
         self.log_panel.append("INFO", "SUBMIT", f"提交 {stage}")
 
