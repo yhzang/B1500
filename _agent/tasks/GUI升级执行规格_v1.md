@@ -11,8 +11,8 @@
 3. ✅ **输出根目录 + run_log.txt + 无 BOM CSV(完成 commit a1cdb95)** — run_control_panel 输出根目录选择器(默认空=repo ROOT,椰椰定)→RunRequest.out_root→worker→`_stage_dir(root=getattr(args,'out_root','') or ROOT)`;`_on_stage_done` 写 `run_dir/run_log.txt`(UTF-8 无 BOM);**全部 8 处 CSV 写入 `utf-8-sig`→`utf-8`**(dc/wgfmu export、iv_sweep、wakeup;FIELDNAMES 走 orchestration/export.py 本就无 BOM,golden 169/640 不动)。真机 `tests/` 106 passed。
 4. ✅(部分) **提升硬编码旋钮(完成 commit eb0f787)** — 经 configure_channel_map 一次性注入运行时全局(波形构建零改动、golden 169/640 不动):**read_irange_gate/drain(CHOICE 下拉)、n_pts、raw_data_mode(CHOICE)** 已提升进 COMMON,所有协议共有、GUI 自动出下拉/spinbox。真机 107 passed,gatekeeper 逐字节守门。
    - **遗留(增量4b)**:t_rf/t_read/t_neutral/t_reset —— 这 4 个时间常量散作字面量/参数默认遍布 ~40 处波形构建点,深度串改、golden 风险高、日常少改,单列后做。
-5. **可视化进阶** — log 轴(delay_s log-X、Y log|Id|)、手动范围 spinbox+自动缩放、InfiniteLine 游标、Id/Ig 通道显隐、Id_std 误差棒、MW=Id_ERS−Id_PGM 派生线。风险中。
-6. **DC 协议族 ParamSpec + RunBrowserPanel**(历史浏览/多 run 叠加/回流项目4) — 最大块,最后做。风险高。
+5. ✅ **可视化进阶(完成 commit 883b70c)** — 结果图工具条:log X/Y 轴、自动缩放、InfiniteLine 十字游标读坐标、Id/Ig 通道显隐、Id_std 误差棒;数据级开关经 plotter options 传适配器,轴级由壳施加;结果 df 缓存改开关即重画。真机 110 passed。(MW 派生线 + 手动范围 spinbox 暂略,够用即可。)
+6. ✅(6a) **RunBrowser(完成 commit 53972b8)** + ⏳(6b DC 族,遗留) — **6a**:新「历史浏览」tab,`scan_runs` 扫两级布局、按 device/die 分组、选中离线重画(按 manifest stage 查 schema)、多选 Id-vs-delay 叠加对比。真机 114 passed。**6b 遗留**:DC_IDVG/IDVD 协议族(SMU 路径接进 WGFMU-centric 引擎是真架构改造:configure_channel_map/make_backend 都是 WGFMU 专属)+ 回流项目4(需目标路径+side-effect 拷贝),单列后做。
 
 ## 要提升的硬编码旋钮(增量4;提升三步:runner 加 flag → registry `_p` 加 ParamSpec → test_registry_params 守门 default 逐字节)
 | 旋钮 | 现位置 | kind/widget | 默认 |
