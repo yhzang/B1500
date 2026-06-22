@@ -86,6 +86,103 @@ def test_plotpanel_realtime_append_accumulates():
     assert pp._live_items == {}
 
 
+def _widget_for(form, name):
+    for p, w in form._fields:
+        if p.name == name:
+            return p, w
+    raise KeyError(name)
+
+
+def test_param_form_typed_widgets_and_si_scaling():
+    """增量2:INT→QSpinBox、FLOAT→QDoubleSpinBox;时间单位 µs 做 SI 缩放,µA 不缩放。"""
+    _ensure_app()
+    from PySide6.QtWidgets import QDoubleSpinBox, QSpinBox
+
+    from gui.param_form import ParamForm
+
+    form = ParamForm()
+    form.set_protocol(REGISTRY["ISPP"])
+    out = form.collect()
+
+    # 时间:ispp_width_s 默认 100e-6 s,单位 µs → 控件显示工程量 100,collect 还原秒
+    _p, w = _widget_for(form, "ispp_width_s")
+    assert isinstance(w, QDoubleSpinBox)
+    assert abs(w.value() - 100.0) < 1e-6
+    assert abs(out["ispp_width_s"] - 100e-6) < 1e-12
+    # 电流:ispp_target_id_uA 默认 0.1(本就以 µA 存)→ 不缩放,collect 原样 0.1
+    _p2, w2 = _widget_for(form, "ispp_target_id_uA")
+    assert isinstance(w2, QDoubleSpinBox)
+    assert abs(out["ispp_target_id_uA"] - 0.1) < 1e-12
+    # INT → QSpinBox
+    _p3, w3 = _widget_for(form, "ispp_max_steps")
+    assert isinstance(w3, QSpinBox)
+    assert out["ispp_max_steps"] == 16
+
+
+def test_param_form_none_default_stays_none():
+    """默认 None 的数值(=用协议标称)留可空文本框,空 → collect 返 None。"""
+    _ensure_app()
+    from gui.param_form import ParamForm
+
+    form = ParamForm()
+    form.set_protocol(REGISTRY["E1"])
+    out = form.collect()
+    assert out.get("vd_read", "MISSING") is None
+
+
+def test_param_form_locked_is_readonly():
+    """LOCKED 接线参数(gate_ch)只读,collect 原样返默认。"""
+    _ensure_app()
+    from PySide6.QtWidgets import QLineEdit
+
+    from gui.param_form import ParamForm
+
+    form = ParamForm()
+    form.set_protocol(REGISTRY["E1"])
+    p, w = _widget_for(form, "gate_ch")
+    assert isinstance(w, QLineEdit) and w.isReadOnly()
+    assert form.collect()["gate_ch"] == p.default
+
+
+def test_param_form_invalid_csv_flags_and_raises():
+    """列表参数非法格式 → is_valid False + 红框 + collect 抛 ValueError;改回合法即恢复。"""
+    import pytest as _pt
+
+    _ensure_app()
+    from gui.param_form import ParamForm
+
+    form = ParamForm()
+    form.set_protocol(REGISTRY["E6D"])
+    _p, w = _widget_for(form, "e6d_delays")
+    w.setText("1e-6, abc")
+    assert form.is_valid() is False
+    with _pt.raises(ValueError):
+        form.collect()
+    w.setText("1e-6, 1e-5")
+    assert form.is_valid() is True
+
+
+def test_param_form_choice_renders_combo():
+    """CHOICE / 带 choices 的 COMBO → QComboBox(用合成 spec,不依赖 registry 是否已有 choices)。"""
+    _ensure_app()
+    from PySide6.QtWidgets import QComboBox
+
+    from fefetlab.engine.specs import ParamKind, ParamSpec, ProtocolSpec, Widget
+
+    from gui.param_form import ParamForm
+
+    spec = ProtocolSpec(
+        id="X", title="t", family="WGFMU", physics="p", description="d",
+        params=(ParamSpec(name="mode", label="模式", kind=ParamKind.CHOICE, default="averaged",
+                          choices=("averaged", "raw"), widget=Widget.COMBO),),
+    )
+    form = ParamForm()
+    form.set_protocol(spec)
+    _p, w = form._fields[0]
+    assert isinstance(w, QComboBox)
+    assert form.collect()["mode"] == "averaged"
+
+
 def test_plotpanel_realtime_skips_nan_and_missing():
     """缺 Id_mean_A / 非数值的行被跳过,不进缓冲。"""
     pytest.importorskip("pyqtgraph")
