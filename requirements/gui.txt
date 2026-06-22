@@ -1,0 +1,6 @@
+# 上位机(PySide6 GUI)依赖 —— 仅 GUI 需要,base.txt 不含。
+# 在测试机上:  .venv\Scripts\pip install -r requirements/gui.txt
+# 本机(分析机)不安装、不运行 GUI;运行/验证一律在测试机。
+-r base.txt
+PySide6>=6.6
+pyqtgraph>=0.13

@@ -57,6 +57,12 @@ class RecordingCallbacks(NullCallbacks):
     def __init__(self) -> None:
         self.events: list[tuple] = []
 
+    def on_progress(self, done: int, total: int) -> None:
+        self.events.append(("progress", done, total))
+
+    def on_shot(self, stage: str, seq: int, rows: list) -> None:
+        self.events.append(("shot", stage, seq, len(rows)))
+
     def on_stage_done(self, summary: Any, run_dir: Any) -> None:
         self.events.append(("stage_done", getattr(summary, "report_code", None)))
 

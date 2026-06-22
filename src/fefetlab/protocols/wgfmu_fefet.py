@@ -144,6 +144,23 @@ def _parse_float_list_csv(value: str) -> list[float]:
     return sorted(set(out))
 
 
+def _parse_float_list_ordered(value) -> list[float]:
+    """Like _parse_float_list_csv but preserves input order, no sort/dedupe.
+
+    For physical scan sequences (E3 widths/amps, E4 pre-bias, E5 Vg/Vd/delays)
+    the listed order is meaningful — the combo build + seeded shuffle depend on
+    it, so sorting would silently change the run (and break the golden audit).
+    """
+    if value is None or str(value).strip() == "":
+        return []
+    out: list[float] = []
+    for part in str(value).split(","):
+        part = part.strip()
+        if part:
+            out.append(float(part))
+    return out
+
+
 def _resolve_write_v(state: str, args) -> float:
     """Effective write amplitude for a write pulse, honoring --write-v.
 
@@ -774,7 +791,7 @@ def _check_ig(rows: list[dict], stage: str, threshold_uA: float) -> None:
     ).check(rows, stage)
 
 
-def run_stage_s0(backend, args) -> StageSummary:
+def run_stage_s0(backend, args, *, callbacks=None) -> StageSummary:
     """Open/fixture smoke: no write, small read-only pulses."""
     out_dir = _stage_dir(args, "S0_open_fixture_smoke")
     rows = []
@@ -790,6 +807,8 @@ def run_stage_s0(backend, args) -> StageSummary:
                 "sequence_id": seq, "repeat_index": rep, "state_target": "READ_ONLY_OPEN",
                 "delay_s": "", "dose_mode": "", "n_read": "", **r, "note": "no_write_open_or_fixture",
             })
+        if callbacks is not None:
+            callbacks.on_shot("S0", seq, rr)
         seq += 1
     _check_samples(rows, "S0")
     _check_ig(rows, "S0", args.s0_ig_stop_uA)
@@ -798,7 +817,7 @@ def run_stage_s0(backend, args) -> StageSummary:
     return _summarize(args, "S0", out_csv, rows, "S0_DONE_PROCEED_TO_S1_IF_PROBES_ON_DEVICE")
 
 
-def run_stage_s1(backend, args) -> StageSummary:
+def run_stage_s1(backend, args, *, callbacks=None) -> StageSummary:
     """Device contacted baseline: no write, 20 low-disturb reads by default."""
     out_dir = _stage_dir(args, "S1_device_read_only_baseline")
     rows = []
@@ -814,6 +833,8 @@ def run_stage_s1(backend, args) -> StageSummary:
                 "sequence_id": seq, "repeat_index": rep, "state_target": "READ_ONLY_DEVICE",
                 "delay_s": "", "dose_mode": "", "n_read": "", **r, "note": "no_write_device_baseline",
             })
+        if callbacks is not None:
+            callbacks.on_shot("S1", seq, rr)
         seq += 1
     _check_samples(rows, "S1")
     _check_ig(rows, "S1", args.s1_ig_stop_uA)
@@ -822,8 +843,8 @@ def run_stage_s1(backend, args) -> StageSummary:
     return _summarize(args, "S1", out_csv, rows, "S1_DONE_PROCEED_TO_E1")
 
 
-def run_stage_e1(backend, args) -> StageSummary:
-    vg_reads = VG_E5 if args.e1_wide_vg else VG_READS
+def run_stage_e1(backend, args, *, callbacks=None) -> StageSummary:
+    vg_reads = _parse_float_list_ordered(args.vg_e5) if args.e1_wide_vg else VG_READS
     delay_list = DELAYS_FULL if args.e1_full_delays else DELAYS_QUICK300
     out_dir = _stage_dir(args, "E1_RAWD_QUICK300ms_v2")
     rows = []
@@ -850,13 +871,15 @@ def run_stage_e1(backend, args) -> StageSummary:
                 _check_samples(rows[-len(rr):], "E1")
                 _check_ig(rows[-len(rr):], "E1", args.e1_ig_stop_uA)
                 print(f"SHOT_OK: E1 rep={rep} state={state} delay_s={delay_s:g} seq={seq}")
+                if callbacks is not None:
+                    callbacks.on_shot("E1", seq, rr)
                 seq += 1
     out_csv = out_dir / "e1_rawd_quick300ms_v2.csv"
     _write_rows(out_csv, rows)
     return _summarize(args, "E1", out_csv, rows, "E1_DONE_PROCEED_TO_E2_MINIMAL_IF_TREND_HEALTHY")
 
 
-def run_stage_e2(backend, args) -> StageSummary:
+def run_stage_e2(backend, args, *, callbacks=None) -> StageSummary:
     out_dir = _stage_dir(args, "E2_minimal_A1_A100_C1_C10")
     rows = []
     seq = 0
@@ -877,6 +900,8 @@ def run_stage_e2(backend, args) -> StageSummary:
             _check_samples(rows[-len(rr):], "E2")
             _check_ig(rows[-len(rr):], "E2", args.e2_ig_stop_uA)
             print(f"SHOT_OK: E2 rep={rep} state={state} mode={mode} n_read={n_read} seq={seq}")
+            if callbacks is not None:
+                callbacks.on_shot("E2", seq, rr)
             seq += 1
     out_csv = out_dir / "e2_minimal_A1_A100_C1_C10.csv"
     _write_rows(out_csv, rows)
@@ -884,11 +909,11 @@ def run_stage_e2(backend, args) -> StageSummary:
 
 
 
-def run_stage_e6r(backend, args) -> StageSummary:
+def run_stage_e6r(backend, args, *, callbacks=None) -> StageSummary:
     """E6R: no-disturb reference using same delays/Vg as E6D, for paired comparison."""
     out_dir = _stage_dir(args, "E6R_no_disturb_reference")
     delays = _parse_float_list_csv(args.e6d_delays) or list(DISTURB_DELAYS_DEFAULT)
-    vg_reads = VG_E5 if args.e6d_wide_vg else DISTURB_VG_READS
+    vg_reads = _parse_float_list_ordered(args.vg_e5) if args.e6d_wide_vg else DISTURB_VG_READS
     rows = []
     seq = 0
     rng = random.Random(args.seed + 16)
@@ -928,17 +953,19 @@ def run_stage_e6r(backend, args) -> StageSummary:
             _check_samples(rows[-len(rr):], "E6R")
             _check_ig(rows[-len(rr):], "E6R", ig_stop)
             print(f"SHOT_OK: E6R rep={rep} initial={initial_state} delay_s={delay_s:g} seq={seq}")
+            if callbacks is not None:
+                callbacks.on_shot("E6R", seq, rr)
             seq += 1
     out_csv = out_dir / "e6r_no_disturb_reference.csv"
     _write_rows(out_csv, rows)
     return _summarize(args, "E6R", out_csv, rows, "E6R_REFERENCE_DONE")
 
-def run_stage_e6d(backend, args) -> StageSummary:
+def run_stage_e6d(backend, args, *, callbacks=None) -> StageSummary:
     """E6D: half-Vdd/opposite-polarity disturb-delay matrix."""
     out_dir = _stage_dir(args, "E6D_halfVdd_disturb_delay")
     amps = _parse_float_list_csv(args.e6d_amps) or list(DISTURB_AMPS_DEFAULT)
     delays = _parse_float_list_csv(args.e6d_delays) or list(DISTURB_DELAYS_DEFAULT)
-    vg_reads = VG_E5 if args.e6d_wide_vg else DISTURB_VG_READS
+    vg_reads = _parse_float_list_ordered(args.vg_e5) if args.e6d_wide_vg else DISTURB_VG_READS
     rows = []
     seq = 0
     rng = random.Random(args.seed + 6)
@@ -978,6 +1005,8 @@ def run_stage_e6d(backend, args) -> StageSummary:
             _check_samples(rows[-len(rr):], "E6D")
             _check_ig(rows[-len(rr):], "E6D", args.e6d_ig_stop_uA)
             print(f"SHOT_OK: E6D rep={rep} initial={initial_state} disturb={v_disturb:+g}V delay_s={delay_s:g} seq={seq}")
+            if callbacks is not None:
+                callbacks.on_shot("E6D", seq, rr)
             seq += 1
     out_csv = out_dir / "e6d_halfvdd_disturb_delay.csv"
     _write_rows(out_csv, rows)
@@ -990,64 +1019,68 @@ E3_AMPS = [3.0, 4.0, 5.0]
 E3_DELAY = 10e-6
 
 
-def run_stage_e3_width(backend, args) -> StageSummary:
+def run_stage_e3_width(backend, args, *, callbacks=None) -> StageSummary:
     """E3 pulse-width scan: fixed ±5V, vary width."""
     out_dir = _stage_dir(args, "E3_pulse_width_scan")
-    vg_reads = VG_E5 if args.e1_wide_vg else VG_READS
+    vg_reads = _parse_float_list_ordered(args.vg_e5) if args.e1_wide_vg else VG_READS
     rows = []
     seq = 0
     rng = random.Random(args.seed + 3)
-    combos = [(s, tw) for s in ["ERS", "PGM"] for tw in E3_WIDTHS]
+    combos = [(s, tw) for s in ["ERS", "PGM"] for tw in _parse_float_list_ordered(args.e3_widths)]
     for rep in range(args.e3_reps):
         order = list(combos)
         rng.shuffle(order)
         for state, tw in order:
             v_w = V_ERS if state == "ERS" else V_PGM
-            rr = run_e1_shot(backend, state=state, delay_s=E3_DELAY,
+            rr = run_e1_shot(backend, state=state, delay_s=args.e3_delay_s,
                              vg_reads=vg_reads, v_write=v_w, t_write=tw)
             for r in rr:
                 rows.append({
                     "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
                     "stage": "E3W", "device_id": args.device_id, "geometry": args.geometry,
                     "sequence_id": seq, "repeat_index": rep, "state_target": state,
-                    "delay_s": E3_DELAY, "dose_mode": f"tw={tw:g}", "n_read": "", **r,
+                    "delay_s": args.e3_delay_s, "dose_mode": f"tw={tw:g}", "n_read": "", **r,
                     "note": f"width_scan_amp={abs(v_w):g}V_tw={tw:g}s",
                 })
             _check_samples(rows[-len(rr):], "E3W")
             _check_ig(rows[-len(rr):], "E3W", args.e3_ig_stop_uA)
             print(f"SHOT_OK: E3W rep={rep} state={state} tw={tw:g} seq={seq}")
+            if callbacks is not None:
+                callbacks.on_shot("E3W", seq, rr)
             seq += 1
     out_csv = out_dir / "e3_pulse_width_scan.csv"
     _write_rows(out_csv, rows)
     return _summarize(args, "E3W", out_csv, rows, "E3W_PULSE_WIDTH_DONE")
 
 
-def run_stage_e3_amp(backend, args) -> StageSummary:
+def run_stage_e3_amp(backend, args, *, callbacks=None) -> StageSummary:
     """E3 amplitude scan: fixed 100µs width, vary amplitude."""
     out_dir = _stage_dir(args, "E3_amplitude_scan")
-    vg_reads = VG_E5 if args.e1_wide_vg else VG_READS
+    vg_reads = _parse_float_list_ordered(args.vg_e5) if args.e1_wide_vg else VG_READS
     rows = []
     seq = 0
     rng = random.Random(args.seed + 30)
-    combos = [(s, a) for s in ["ERS", "PGM"] for a in E3_AMPS]
+    combos = [(s, a) for s in ["ERS", "PGM"] for a in _parse_float_list_ordered(args.e3_amps)]
     for rep in range(args.e3_reps):
         order = list(combos)
         rng.shuffle(order)
         for state, amp in order:
             v_w = +amp if state == "ERS" else -amp
-            rr = run_e1_shot(backend, state=state, delay_s=E3_DELAY,
+            rr = run_e1_shot(backend, state=state, delay_s=args.e3_delay_s,
                              vg_reads=vg_reads, v_write=v_w, t_write=T_WRITE)
             for r in rr:
                 rows.append({
                     "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
                     "stage": "E3A", "device_id": args.device_id, "geometry": args.geometry,
                     "sequence_id": seq, "repeat_index": rep, "state_target": state,
-                    "delay_s": E3_DELAY, "dose_mode": f"amp={v_w:+g}", "n_read": "", **r,
+                    "delay_s": args.e3_delay_s, "dose_mode": f"amp={v_w:+g}", "n_read": "", **r,
                     "note": f"amp_scan_V={v_w:+g}_tw={T_WRITE:g}s",
                 })
             _check_samples(rows[-len(rr):], "E3A")
             _check_ig(rows[-len(rr):], "E3A", args.e3_ig_stop_uA)
             print(f"SHOT_OK: E3A rep={rep} state={state} amp={v_w:+g} seq={seq}")
+            if callbacks is not None:
+                callbacks.on_shot("E3A", seq, rr)
             seq += 1
     out_csv = out_dir / "e3_amplitude_scan.csv"
     _write_rows(out_csv, rows)
@@ -1100,39 +1133,43 @@ def run_e4_shot(backend, *, state: str, prebias_v: float, prebias_s: float,
     return _summarize_windows(g_df, d_df, windows)
 
 
-def run_stage_e4(backend, args) -> StageSummary:
+def run_stage_e4(backend, args, *, callbacks=None) -> StageSummary:
     """E4: pre-bias polarity test."""
     out_dir = _stage_dir(args, "E4_prebias")
-    vg_reads = VG_E5 if args.e1_wide_vg else VG_READS
+    vg_reads = _parse_float_list_ordered(args.vg_e5) if args.e1_wide_vg else VG_READS
     rows = []
     seq = 0
     rng = random.Random(args.seed + 4)
-    combos = [(s, pv, ps) for s in ["ERS", "PGM"] for pv in E4_PREBIAS_V for ps in E4_PREBIAS_S]
+    combos = [(s, pv, ps) for s in ["ERS", "PGM"]
+              for pv in _parse_float_list_ordered(args.e4_prebias_v)
+              for ps in _parse_float_list_ordered(args.e4_prebias_s)]
     for rep in range(args.e4_reps):
         order = list(combos)
         rng.shuffle(order)
         for state, pv, ps in order:
             rr = run_e4_shot(backend, state=state, prebias_v=pv, prebias_s=ps,
-                             post_delay_s=E4_POST_DELAY, vg_reads=vg_reads)
+                             post_delay_s=args.e4_post_delay_s, vg_reads=vg_reads)
             for r in rr:
                 rows.append({
                     "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
                     "stage": "E4", "device_id": args.device_id, "geometry": args.geometry,
                     "sequence_id": seq, "repeat_index": rep, "state_target": state,
-                    "delay_s": E4_POST_DELAY, "dose_mode": f"pb={pv:+g}V/{ps:g}s",
+                    "delay_s": args.e4_post_delay_s, "dose_mode": f"pb={pv:+g}V/{ps:g}s",
                     "n_read": "", **r,
                     "note": f"prebias_{pv:+g}V_{ps:g}s",
                 })
             _check_samples(rows[-len(rr):], "E4")
             _check_ig(rows[-len(rr):], "E4", args.e4_ig_stop_uA)
             print(f"SHOT_OK: E4 rep={rep} state={state} pb={pv:+g}V/{ps:g}s seq={seq}")
+            if callbacks is not None:
+                callbacks.on_shot("E4", seq, rr)
             seq += 1
     out_csv = out_dir / "e4_prebias.csv"
     _write_rows(out_csv, rows)
     return _summarize(args, "E4", out_csv, rows, "E4_PREBIAS_DONE")
 
 
-def run_stage_e5(backend, args) -> StageSummary:
+def run_stage_e5(backend, args, *, callbacks=None) -> StageSummary:
     """E5: Vg×Vd read-window visibility grid after write."""
     out_dir = _stage_dir(args, "E5_visibility_grid")
     rows = []
@@ -1140,15 +1177,15 @@ def run_stage_e5(backend, args) -> StageSummary:
     rng = random.Random(args.seed + 5)
     combos = []
     for state in ["ERS", "PGM"]:
-        for vd in VD_E5:
-            for delay_s in DELAYS_E5:
+        for vd in _parse_float_list_ordered(args.vd_e5):
+            for delay_s in _parse_float_list_ordered(args.delays_e5):
                 combos.append((state, vd, delay_s))
     for rep in range(args.e5_reps):
         order = list(combos)
         rng.shuffle(order)
         for state, vd, delay_s in order:
             rr = run_e1_shot(backend, state=state, delay_s=delay_s,
-                             vg_reads=VG_E5, vd_read=vd, n_pts=N_PTS,
+                             vg_reads=_parse_float_list_ordered(args.vg_e5), vd_read=vd, n_pts=N_PTS,
                              v_write=_resolve_write_v(state, args),
                              t_write=_resolve_t_write(args))
             for r in rr:
@@ -1162,13 +1199,15 @@ def run_stage_e5(backend, args) -> StageSummary:
             _check_samples(rows[-len(rr):], "E5")
             _check_ig(rows[-len(rr):], "E5", args.e5_ig_stop_uA)
             print(f"SHOT_OK: E5 rep={rep} state={state} Vd={vd:g} delay_s={delay_s:g} seq={seq}")
+            if callbacks is not None:
+                callbacks.on_shot("E5", seq, rr)
             seq += 1
     out_csv = out_dir / "e5_visibility_grid.csv"
     _write_rows(out_csv, rows)
     return _summarize(args, "E5", out_csv, rows, "E5_VISIBILITY_DONE")
 
 
-def run_stage_cycle(backend, args) -> StageSummary:
+def run_stage_cycle(backend, args, *, callbacks=None) -> StageSummary:
     """Checkpointed cycle endurance: stress many cycles, read MW only at checkpoints."""
     checkpoints = [c for c in _parse_int_list_csv(args.cycle_checkpoints) if c <= args.cycle_count]
     if not checkpoints or checkpoints[-1] != args.cycle_count:
@@ -1179,7 +1218,7 @@ def run_stage_cycle(backend, args) -> StageSummary:
     rows = []
     seq = 0
     current_cycle = 0
-    vg_reads = VG_E5 if args.cycle_wide_vg else VG_CYCLE
+    vg_reads = _parse_float_list_ordered(args.vg_e5) if args.cycle_wide_vg else VG_CYCLE
 
     for checkpoint in checkpoints:
         current_cycle = _run_cycle_stress_to_checkpoint(
@@ -1205,6 +1244,8 @@ def run_stage_cycle(backend, args) -> StageSummary:
             _check_samples(rows[-len(rr):], "CYCLE")
             _check_ig(rows[-len(rr):], "CYCLE", args.cycle_ig_stop_uA)
             print(f"SHOT_OK: CYCLE checkpoint={checkpoint} state={state} seq={seq}")
+            if callbacks is not None:
+                callbacks.on_shot("CYCLE", seq, rr)
             seq += 1
     out_csv = out_dir / "cycle_checkpoint_endurance.csv"
     _write_rows(out_csv, rows)
@@ -1254,7 +1295,7 @@ def run_mlc_shot(backend, *, v_erase: float, v_program: float, t_pulse: float,
     return _summarize_windows(g_df, d_df, windows)
 
 
-def run_stage_mlc(backend, args) -> StageSummary:
+def run_stage_mlc(backend, args, *, callbacks=None) -> StageSummary:
     """MLC 多值编程幅值扫描(PPT 第6页②):每个 +幅值 先擦除 reset 再编程,单点读 Id。
 
     出 Id-vs-编程幅值 多值特性。擦除/脉宽/读 Vg/Vd/幅值集均可由 --mlc-* 设;默认按 PPT
@@ -1290,6 +1331,8 @@ def run_stage_mlc(backend, args) -> StageSummary:
             _check_samples(rows[-len(rr):], "MLC")
             _check_ig(rows[-len(rr):], "MLC", args.mlc_ig_stop_uA)
             print(f"SHOT_OK: MLC rep={rep} prog_amp={amp:+g} seq={seq}")
+            if callbacks is not None:
+                callbacks.on_shot("MLC", seq, rr)
             seq += 1
     out_csv = out_dir / "mlc_program_amplitude_scan.csv"
     _write_rows(out_csv, rows)
@@ -1393,10 +1436,28 @@ def parse_args(argv=None):
     ap.add_argument("--e2-ig-stop-uA", type=float, default=20.0)
     ap.add_argument("--e3-reps", type=int, default=3)
     ap.add_argument("--e3-ig-stop-uA", type=float, default=30.0)
+    ap.add_argument("--e3-widths", default=",".join(str(x) for x in E3_WIDTHS),
+                    help="E3W 脉宽扫描点 s(逗号分隔,顺序保留);默认 1µs~300µs")
+    ap.add_argument("--e3-amps", default=",".join(str(x) for x in E3_AMPS),
+                    help="E3A 幅值扫描点 V(逗号分隔,绝对值,顺序保留);默认 3,4,5")
+    ap.add_argument("--e3-delay-s", type=float, default=E3_DELAY,
+                    help="E3 写后读延迟 s(默认 10µs)")
     ap.add_argument("--e4-reps", type=int, default=3)
     ap.add_argument("--e4-ig-stop-uA", type=float, default=30.0)
+    ap.add_argument("--e4-prebias-v", default=",".join(str(x) for x in E4_PREBIAS_V),
+                    help="E4 预偏压幅值 V(逗号分隔,顺序保留);默认 0,+2,-2")
+    ap.add_argument("--e4-prebias-s", default=",".join(str(x) for x in E4_PREBIAS_S),
+                    help="E4 预偏压持续 s(逗号分隔,顺序保留);默认 1ms,100ms,1s")
+    ap.add_argument("--e4-post-delay-s", type=float, default=E4_POST_DELAY,
+                    help="E4 写后读延迟 s(默认 10µs)")
     ap.add_argument("--e5-reps", type=int, default=3)
     ap.add_argument("--e5-ig-stop-uA", type=float, default=20.0)
+    ap.add_argument("--vg-e5", default=",".join(str(x) for x in VG_E5),
+                    help="E5 读出 Vg 网格 V(逗号分隔,顺序保留);也用作各协议宽 Vg 网格")
+    ap.add_argument("--vd-e5", default=",".join(str(x) for x in VD_E5),
+                    help="E5 读出 Vd 集 V(逗号分隔);默认 0.05")
+    ap.add_argument("--delays-e5", default=",".join(str(x) for x in DELAYS_E5),
+                    help="E5 写后读延迟集 s(逗号分隔,顺序保留);默认 10µs,1s")
     ap.add_argument("--e6r-reps", type=int, default=3)
     ap.add_argument("--e6r-ig-stop-uA", type=float, default=20.0)
     ap.add_argument("--e6d-reps", type=int, default=3)

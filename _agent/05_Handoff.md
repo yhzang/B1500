@@ -5,6 +5,73 @@
 
 ---
 
+## 2026-06-22 → SSH 闭环打通 + M1 Step1(on_shot)/Step2(B7) done＋真机验证
+
+**椰椰问"你是可以 ssh 连接的吧"→ 是,且已闭环。** 分析机本身在 Tailscale 网内,`ssh administrator@100.108.189.9` 免密 + `scp` + 远程 `pytest` 全通(DERP 中继)。上一会话连不上是网络隔离的 Cowork 沙箱(另一套环境),与本机无关;UU远程鼠标/剪贴板绕路作废。**以后一改一验证我自己闭环:G 盘改 → scp 推 → 远程 pytest → 读结果。**
+
+**本会话产出(均已 scp 到测试机 ＋ 真机 pytest 绿):**
+- **Step1 on_shot**:4 文件(`protocols/wgfmu_fefet.py`、`engine/engine.py`、`engine/callbacks.py`、`tests/test_engine_run.py`)。→ **同时解锁 06-17 handoff 里说的 M3 逐炮实时绘图**(GUI 现可接 on_shot)。
+- **Step2 B7 常量提升**:`wgfmu_fefet.py` + `engine/registry.py`;9 个新 flag＋ParamSpec(E3W/E3A/E4/E5);新增顺序保留解析 `_parse_float_list_ordered`(踩 `E4_PREBIAS_V=[0,+2,-2]` 非升序 → 原 `sorted()` 会破金标准 的坑)。
+- 测试机 `tests/` **89 passed in 25s**;ALL_DRY 仍 `execute_count=169 / max_vectors_seen=640`。备份 `.bak_20260622`(Step1 四文件)、`.bak_20260622_preB7`(B7 两文件)。
+
+**同步真相(纠正上一会话的"岔开"恐慌):** G 盘 vs 测试机 65 个 .py **内容完全一致**(差异仅 CRLF/LF);G 盘 git 含测试机 HEAD `7389f01` 且领先 11 commit = 规范源。别再被 Google Drive 按需枚举的"空文件夹/缺 gui"假象骗;比对一律用内容哈希 `C:\Users\Administrator\.claude\tmp\hashpy_norm.ps1`。
+
+**下一步(M1 余项剩 5):** ① `validate_params` → ② `build_argparser`(依赖 B7,现可做)→ ③ DC 注册进 REGISTRY → ④ BackendManager → ⑤ 去模块全局 `GATE_CH/DRAIN_CH/...`(线程安全,压轴)。另:GUI v1(06-17)已在测试机可跑(桌面双击 `run_gui.bat`),on_shot 就位后 M3 live 绘图可接。
+
+**坑备忘:** 远程测试跑 `pytest tests/`(限定目录),**勿** bare `pytest`——会收集 `_agent/remote_backup_*/` 旧用例 ＋ `src/scripts/connect_test.py`(开真机 VISA)而炸。
+
+---
+
+## 2026-06-17 (2) → 上位机已同步测试机 + 离屏验证 17 passed(可上桌面看界面了)
+
+- **同步**:本机 Tailscale 重启后连通(SSH 一度超时其实是本机 Tailscale 没起,起来即通)。SHA256 核验:测试机 `engine`/`protocols` 与本机一致(`audit_backend.py` 仅 CRLF/LF 差异、功能同),故**只推新增**:`gui/`(14)+`requirements/gui.txt`+`run_gui.bat`+`tests/test_gui_smoke.py`,17 文件逐字节核对一致,**零覆盖现有代码**。
+- **装依赖**:测试机 venv(Python 3.13.5)装 PySide6 6.11.1 + pyqtgraph 0.14.0(清华镜像)。
+- **验证(offscreen 离屏)**:`pytest tests/test_gui_smoke.py tests/test_engine_run.py` → **17 passed**(ParamForm 覆盖全部 12 协议 + MainWindow 构造 + 12 段 dry 逐字节对齐金标准)。GUI 组件构造无误。
+- **远程操作三个坑(记下别再踩)**:① 本机别在 shell 里 `set QT_QPA_PLATFORM=offscreen & ...`——cmd 把 `&` 前空格并进变量值,Qt 报 plugin `"offscreen "`(带空格)直接 abort;让测试自己 `os.environ.setdefault` 即可。② ssh→远端 cmd 下 `python -c "..."` 的双引号会被吞,改用无引号命令或 scp 脚本文件再跑。③ pytest 里 QApplication 必须放模块全局,否则测试结束 GC 析构顺序错乱段错误(已修 `tests/test_gui_smoke.py` 的 `_APP`)。
+- **待椰椰**:在测试机**桌面**双击 `run_gui.bat`(或先建桌面快捷方式)看界面——SSH 启的 GUI 窗口不会出现在它的显示器上,必须在测试机本地/RDP 启。`QFontDatabase` 字体警告 offscreen 才有,真桌面无碍。
+
+---
+
+## 2026-06-17 → 上位机初版界面已写 + 对抗式自查 + 修复(本机未跑,待测试机验)
+
+**椰椰拍板**:不只出计划了,直接做初版界面,"我们再改"。
+
+**已落地**:新增 `gui/` 包(14 文件)+ `requirements/gui.txt`(PySide6+pyqtgraph)+ `tests/test_gui_smoke.py`(离屏,无 PySide6 自动 skip)。架构=共性壳 + FeFET 适配层:
+- 壳(与存储器无关):`app/main_window`、`protocol_panel`(按 `family` 泛化分组)、`param_form`(按 `ParamSpec` 自动生成)、`run_control_panel`(身份+dry/live+运行/停止)、`engine_worker`+`engine_controller`(QThread,worker 只 emit 不碰 widget)、`plot_panel`/`log_panel`/`plot_dispatch`(按 csv_schema 查表)。
+- 适配层:`gui/adapters/fefet_plots.py` `@register_plot("fefet_fixedcols")`。
+- 只走引擎门:worker `params=vars(parse_args([])) ∪ 非None表单/身份`,`make_backend(live)`,`ProtocolEngine().run(stage,params,backend=,callbacks=,confirm=)`。dry 结果图标"DRY 占位电流·非器件数据"(守 02_Plan 弯路铁律)。
+
+**本机不跑**(分析机),用对抗式 review 代替运行:两轮工作流(plot/pandas + 引擎接口/PySide6/逻辑健壮性,后三个首轮 API socket 挂掉已重跑),共 20 条发现、**0 high**。已修:①清空数值框→None 覆盖默认致 `range(None)`/`float(None)` 崩(表单回退默认 + worker 丢 None 键双保险);②`make_backend` 早于 `configure_channel_map` 致用错/陈旧通道全局(worker 里先 configure 再 make_backend,镜像 CLI);③进度条空转(接 `set_progress`);④两处 legend 累积泄漏;⑤`_pattern_xy` 容忍 dict 向量;⑥波形标"最后一炮"、`protocolSelected` 接状态栏、运行中禁用协议树。**留作后续(v1 可接受)**:逐炮实时绘图(M3,待 runner 接 on_shot)、request_stop 直接置 bool(GIL 安全,设计如此)。
+
+**下一步**:① 按同步铁律把整个 `gui/` + `requirements/gui.txt` scp 到测试机(覆盖不 pull),`pip install -r requirements/gui.txt`,`python -m gui` 实跑(注意:测试机 venv 须已 `pip install -e .`,否则 smoke 测试 import fefetlab 会 ERROR 而非 skip);② 椰椰看界面提改法迭代。**另:**《代码规范》文档(规范抽取工作流已出 133 条+核验)尚未成文,GUI 这轮后补。
+
+---
+
+## 2026-06-16 → 上位机 M2 详细搭建计划已出（只出计划，未动工；等椰椰过目）
+
+**椰椰决策**：(1) 本次只出详细搭建计划，过目后再写代码；(2) 扩展策略=**FeFET 优先，但先把"共性壳/功能键"与"按存储器单独适配"的缝划清**，将来加新存储器（RRAM/相变…）界面功能键一致、只补适配层、`gui/` 不重写。暂无具体第二种存储器目标，留好位即可。
+
+**计划落点**：`_agent/tasks/M2_GUI骨架_搭建计划.md`（含现状校正/共性-适配契约/文件清单/数据流/分步验收/风险）。
+
+**关键结论（读真代码核出，供动手时贴齐）**：
+- M2 竖切片**不卡硬件、不卡 M1 余项**：dry-run 走 `make_backend(False)`→`AuditBackend`→现有 `engine.run(id, params, backend=bk, callbacks=cb)`，可在 G 盘开发机直接写+测。
+- 真代码 4 处与设计文档措辞不一致（计划按真代码）：`engine.run` 是**注入式 backend**（BackendManager 未建）、`ParamView(params)` 单参、`validate_params` 未接、`on_shot/on_progress` 未接进 runner。
+- `REGISTRY` 已带逐参数 ParamSpec（12 段，含 MLC），按 `family` 分组；波形预览唯一真值源=`AuditBackend._patterns`（元组解包，勿用 `DummyWgfmuBackend`）。
+- **依赖缺口**：base.txt 无 GUI 依赖，M2.0 须加 `requirements/gui.txt`（PySide6+pyqtgraph）。
+- **接缝铁律**：M2.4 必须落 `gui/plot_dispatch.py` 注册表 + 协议树按 family 泛化，否则"共性/适配"缝形同虚设。
+
+**下一步**：椰椰过目计划 → 确认后从 M2.0 起逐步实施（每步独立验收）。同步到测试机要带上整个 `gui/` + `requirements/gui.txt`（scp 覆盖不 pull）。
+
+---
+
+## 2026-06-11 (2) → 🐛 hotfix：single_shot M1 搬家漏改 `_HERE`（import 即崩）已修，git 未提交
+
+**问题**：06-10 M1 搬家把 `_HERE` 更名 `_SRC`，但 `scripts/wgfmu_single_shot_disturb.py` 行 1066 `REST_ANCHOR_PATH = _HERE.parent/...` 漏改 → import 即 NameError，**现行版完全不可运行**（项目4 开题摘要审计工作流顺带发现）。
+
+**修复（2026-06-11，Claude·开题会话代办）**：改为 `_SRC.parent / "runs" / "rest_anchor.txt"`（`_SRC.parent` 与旧 `_HERE.parent` 同为仓库根，rest_anchor 落点不变），带注释。py_compile 通过、`_HERE` 运行时引用清零。**未跑完整测试套件、未 commit——下次会话顺手 pytest + 提交**。测试机上现部署的是 06-09 旧版（哈希 a1f514d0，不受影响），但**修复 commit 前禁止 scp 部署现行版**。
+
+---
+
 ## 2026-06-11 → 上位机重构 M1：engine 键石已落地 + 命名(serial/die)收口；M1 余项派 codex
 
 **大背景**：项目3 从散脚本走向**测试机本地 PySide6 上位机**（远程只为开发，装好即独立运行）。设计文档 `_agent/references/B1500_GUI架构设计_PySide6.md` + `_agent/references/B1500_自定义测试配方与接线档案_设计.md`。

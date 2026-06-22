@@ -12,8 +12,10 @@
     Setup Profile / 运行头里的自由文本元数据,且 ParamKind/Widget 词汇刻意不含纯文本类型;
     身份由器件选择器处理,不在逐协议测量表单里。`--stage`(协议选择器本身)、`--confirm`
     (live 安全握手令牌)同理不入 params。
-  * B7 仍硬编码在 runner 里的物理常量(E3_WIDTHS/E3_AMPS/E4_PREBIAS_*/VG_E5/N_PTS/量程…)
-    尚未提升为 flag,故暂不在此枚举;待 B7 常量提升后补对应 ParamSpec。
+  * B7 物理常量已提升为 flag 并枚举:E3W=e3_widths/e3_delay_s、E3A=e3_amps/e3_delay_s、
+    E4=e4_prebias_v/e4_prebias_s/e4_post_delay_s、E5=vg_e5/vd_e5/delays_e5(均用顺序保留
+    解析,默认值由 runner 常量派生,逐字节对齐金标准)。仍硬编码的低层常量(读量程、T_RF
+    等波形时序)不属测量旋钮,继续留在 runner。
 """
 from __future__ import annotations
 
@@ -24,10 +26,17 @@ from ..protocols.wgfmu_fefet import (
     DEFAULT_DRAIN_CH,
     DEFAULT_FORBIDDEN_CHANNELS,
     DEFAULT_GATE_CH,
+    DELAYS_E5,
     DISTURB_AMPS_DEFAULT,
     DISTURB_DELAYS_DEFAULT,
     DISTURB_WIDTH,
     CYCLE_CHECKPOINTS_DEFAULT,
+    E3_AMPS,
+    E3_DELAY,
+    E3_WIDTHS,
+    E4_POST_DELAY,
+    E4_PREBIAS_S,
+    E4_PREBIAS_V,
     MLC_AMPS_DEFAULT,
     MLC_DELAY,
     MLC_PULSE_WIDTH,
@@ -36,6 +45,8 @@ from ..protocols.wgfmu_fefet import (
     MLC_V_ERASE,
     N_PTS,
     STAGE_REGISTRY,
+    VD_E5,
+    VG_E5,
 )
 from .specs import ParamKind as K
 from .specs import ParamSpec
@@ -152,12 +163,39 @@ _STAGE_PARAMS: dict[str, tuple[ParamSpec, ...]] = {
     "E2": (_reps("e2_reps", 2, "重复次数"), _ig_stop("e2_ig_stop_uA", 20.0),
            *WRITE, *COMMON),
     "E3W": (_reps("e3_reps", 3, "重复次数"), _ig_stop("e3_ig_stop_uA", 30.0),
+            _p("e3_widths", K.FLOAT_LIST, ",".join(str(x) for x in E3_WIDTHS),
+               label="脉宽扫描点", unit="s", widget=W.CSV_LINE, vis=V.BASIC,
+               help="E3W 固定 ±5 V,扫这些脉宽(逗号分隔,顺序保留)"),
+            _p("e3_delay_s", K.FLOAT, E3_DELAY, label="写后读延迟", unit="s", vis=V.ADVANCED,
+               help="写脉冲到读取之间的延迟"),
             *COMMON),
     "E3A": (_reps("e3_reps", 3, "重复次数"), _ig_stop("e3_ig_stop_uA", 30.0),
+            _p("e3_amps", K.FLOAT_LIST, ",".join(str(x) for x in E3_AMPS),
+               label="幅值扫描点", unit="V", widget=W.CSV_LINE, vis=V.BASIC,
+               help="E3A 固定 100 µs,扫这些幅值绝对值(逗号分隔,顺序保留)"),
+            _p("e3_delay_s", K.FLOAT, E3_DELAY, label="写后读延迟", unit="s", vis=V.ADVANCED,
+               help="写脉冲到读取之间的延迟"),
             *COMMON),
     "E4": (_reps("e4_reps", 3, "重复次数"), _ig_stop("e4_ig_stop_uA", 30.0),
+           _p("e4_prebias_v", K.FLOAT_LIST, ",".join(str(x) for x in E4_PREBIAS_V),
+              label="预偏压幅值集", unit="V", widget=W.CSV_LINE, vis=V.BASIC,
+              help="预偏压电压(逗号分隔,顺序保留);默认 0,+2,-2"),
+           _p("e4_prebias_s", K.FLOAT_LIST, ",".join(str(x) for x in E4_PREBIAS_S),
+              label="预偏压持续集", unit="s", widget=W.CSV_LINE, vis=V.BASIC,
+              help="每个预偏压的持续时间(逗号分隔,顺序保留)"),
+           _p("e4_post_delay_s", K.FLOAT, E4_POST_DELAY, label="写后读延迟", unit="s",
+              vis=V.ADVANCED, help="写脉冲到读取之间的延迟"),
            *COMMON),
     "E5": (_reps("e5_reps", 3, "重复次数"), _ig_stop("e5_ig_stop_uA", 20.0),
+           _p("vg_e5", K.FLOAT_LIST, ",".join(str(x) for x in VG_E5),
+              label="读出 Vg 网格", unit="V", widget=W.CSV_LINE, vis=V.BASIC,
+              help="E5 读窗 Vg 扫描网格(逗号分隔,顺序保留);也是各协议宽 Vg 网格"),
+           _p("vd_e5", K.FLOAT_LIST, ",".join(str(x) for x in VD_E5),
+              label="读出 Vd 集", unit="V", widget=W.CSV_LINE, vis=V.BASIC,
+              help="E5 读窗 Vd 集(逗号分隔)"),
+           _p("delays_e5", K.FLOAT_LIST, ",".join(str(x) for x in DELAYS_E5),
+              label="写后读延迟集", unit="s", widget=W.CSV_LINE, vis=V.BASIC,
+              help="E5 写后到读的延迟集(逗号分隔,顺序保留)"),
            *WRITE, *COMMON),
     "E6R": (_reps("e6r_reps", 3, "重复次数"), _ig_stop("e6r_ig_stop_uA", 20.0),
             *WRITE, *COMMON),

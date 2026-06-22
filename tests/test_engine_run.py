@@ -16,7 +16,7 @@ import pytest
 
 from fefetlab.engine import ProtocolEngine, REGISTRY, RecordingCallbacks
 from fefetlab.measurements.wgfmu.audit_backend import AuditBackend
-from fefetlab.protocols.wgfmu_fefet import DRAIN_CH, GATE_CH, parse_args
+from fefetlab.protocols.wgfmu_fefet import DELAYS_QUICK300, DRAIN_CH, GATE_CH, parse_args
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
 STAGES = ["S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE", "MLC"]
@@ -101,3 +101,20 @@ def test_engine_run_live_without_confirm_is_blocked():
     with pytest.raises(StopGate):
         ProtocolEngine().run("S0", params, backend=_dry_backend(), callbacks=cb, confirm="")
     assert any(e[0] == "stop_gate" for e in cb.events)
+
+
+def test_engine_run_emits_on_shot_per_shot():
+    """on_shot 每炮发一次,携带该炮 rows;GUI 实时绘图/进度据此。E1 dry: 8 delays × 2 states = 16 炮。"""
+    params = vars(parse_args(["--stage", "E1", *COMMON, *REPS]))
+    backend = _dry_backend()
+    cb = RecordingCallbacks()
+    out_csv = None
+    try:
+        summary = ProtocolEngine().run("E1", params, backend=backend, callbacks=cb)
+        out_csv = Path(summary.out_csv)
+    finally:
+        if out_csv is not None:
+            _cleanup(out_csv)
+    shots = [e for e in cb.events if e[0] == "shot"]
+    assert len(shots) == len(DELAYS_QUICK300) * 2, f"E1 应发 {len(DELAYS_QUICK300) * 2} 次 on_shot,实际 {len(shots)}"
+    assert all(e[1] == "E1" and e[3] > 0 for e in shots), "每炮 on_shot 应带 stage=E1 且 rows 非空"

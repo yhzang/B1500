@@ -68,7 +68,7 @@ class ProtocolEngine:
         try:
             configure_channel_map(view)                       # 通道映射 + 合法性(gate≠drain/禁用集)
             validate_live_request(protocol_id, live, confirm)  # live 一段一确认,原样复用 core.py
-            summary = spec.runner(backend, view)               # 现有 run_stage_*(backend, args) 零改动
+            summary = spec.runner(backend, view, callbacks=cb)  # run_stage_*(backend, view, *, callbacks=None)
             cb.on_stage_done(summary, summary.out_csv.parent)
             return summary
         except StopGate as exc:

@@ -1,9 +1,27 @@
 # 当前状态
 
-- 更新时间：2026-06-11 CST（claude；补正 06-10/06-11 上位机重构进度，旧 06-04 口径下沉为历史）
+- 更新时间：2026-06-22 CST（claude；SSH 闭环 + M1 Step1/B7 收尾，06-11 口径下沉为历史）
 - 当前目标：**把项目3 从散脚本重构成测试机本地 PySide6 上位机**（远程只为开发，装好即独立运行）。设计文档：`_agent/references/B1500_GUI架构设计_PySide6.md` + `_agent/references/B1500_自定义测试配方与接线档案_设计.md`。
 
-## 2026-06-11 上位机重构进度（权威，claude）
+## 2026-06-22 SSH 闭环 + M1 收尾推进（权威，claude）
+
+**重大变化：分析机可直接 SSH/scp 驱动测试机，一改一验证全自动。**
+- 分析机 `win-3764m2kl9c3` 与测试机 `desktop-bpj59bj`（`100.108.189.9`）同在 Tailscale 网内；本会话实测 `ssh administrator@100.108.189.9` 免密 + `scp` 推文件 + 远程 `pytest` 全部可用（经 DERP 中继，稍慢但稳）。**之前"连不上测试机"是某个网络隔离的 Cowork 沙箱（另一套环境），与此处无关；UU远程鼠标/剪贴板绕路已废弃。**
+- 同步纪律：G 盘＝规范源（LF），测试机 `D:\test\B1500`＝部署副本（git checkout 出来是 CRLF）。**比对只看内容（去行尾）**；scp 直接覆盖（传字节、LF 保留），不碰测试机 git。内容哈希双向核对脚本：`C:\Users\Administrator\.claude\tmp\hashpy_norm.ps1`。
+- **澄清旧误判**：06-09 runbook / 上一会话担心的"G 盘缺 gui/、两份岔开"是 Google Drive 按需枚举假象——哈希核对证明 **G 盘与测试机 65 个 .py 内容完全一致**；G 盘 git 历史包含测试机 HEAD `7389f01` 且领先 11 个 commit，**G 盘就是规范源**。
+
+**M1 进度（以代码为准）：**
+- ✅ **Step1 on_shot 接入**（done＋真机验证）：12 个 `run_stage_*` 加 `*, callbacks=None`，每炮发 `callbacks.on_shot(stage,seq,rr)`；CLI 不传 callbacks→行为零改变。
+- ✅ **Step2 B7 物理常量提升**（done＋真机验证）：E3W=`e3_widths`/`e3_delay_s`、E3A=`e3_amps`/`e3_delay_s`、E4=`e4_prebias_v`/`e4_prebias_s`/`e4_post_delay_s`、E5=`vg_e5`/`vd_e5`/`delays_e5` 全提升为 flag＋补进 REGISTRY ParamSpec。**关键坑**：`E4_PREBIAS_V=[0,+2,-2]` 非升序，原 `_parse_float_list_csv` 会 `sorted()` 改变 seeded-shuffle 顺序→破金标准；故新增**顺序保留解析** `_parse_float_list_ordered`，默认值由 runner 常量派生、逐字节对齐。
+- ✅ **REGISTRY params 已全枚举**（纠正 06-11 的"待枚举"）：12 协议 ParamSpec 齐全，`tests/test_registry_params.py` 逐条守门（name==dest、default==argparse 默认）。
+- **真机验证**：测试机 `tests/` 全套 **89 passed in 25s**；关键 34 项（gatekeeper＋golden＋engine）逐字节绿，ALL_DRY 仍 **execute_count=169 / max_vectors_seen=640**。备份：`.bak_20260622`（Step1 四文件）、`.bak_20260622_preB7`（wgfmu_fefet.py / registry.py）。
+
+**M1 余项（剩 5，按建议序）：** ① engine.run 加 `validate_params` 护栏 → ② `build_argparser` 从 REGISTRY 派生（依赖 B7，现已可做）→ ③ DC 协议注册进 REGISTRY → ④ BackendManager 封装会话生命周期 → ⑤ 去模块全局 `GATE_CH/DRAIN_CH/ALLOWED/FORBIDDEN`（线程安全，压轴最大重构）。均只挡 GUI 表单/并发，不挡新器件测试。`on_progress` 仍推迟（GUI 可从 on_shot 计数派生）。
+- **测试调用纪律**：跑 `pytest tests/`（限定目录），**勿** bare `pytest`——会收集 `_agent/remote_backup_*/` 旧用例 ＋ `src/scripts/connect_test.py`（开真机 VISA）而炸。
+
+---
+
+## 2026-06-11 上位机重构进度（历史，claude；M1 余项已被上方 06-22 更新）
 - **搬家完成**：1378 行 WGFMU CLI → `src/fefetlab/protocols/wgfmu_fefet.py`（原 `scripts/wgfmu_next_round_minimal.py` 退役）。`ALL_DRY` 审计现为 **execute_count=169 / max_vectors_seen=640**（E6R/E6D 加入后；旧 96 作废）。全套 **79 passed**。
 - **M1 引擎键石 done**：`src/fefetlab/engine/`（specs / param_view / callbacks / registry / engine）。`ProtocolEngine.run(protocol_id, params, *, backend, callbacks)` = GUI/CLI 共用**唯一执行门**，经 `ParamView` 驱动现有 11 段 `run_stage_*`，**逐字节对齐金标准**（收口零行为改变）。`REGISTRY` 把 11 段升格 `ProtocolSpec`（`params=()` 待枚举）。已 commit/push/测试机验证（engine.run 14 passed + ALL_DRY 169/640）。
 - **数据存储两级归集**：`runs/<device>/<die>/{live,dry}/<ts>_<stage>/`。device=`--device-id`（批次/自命名，可中文，如 `微所pfefet2026`，顶层归集）；die=`--geometry`+`--serial`（如 `L10W40_41`）。新增 **`--serial`** 字段（修复序号此前并入自由文字 device-id 后丢失的回归），manifest 加 `serial`。**下游（项目4/2）按 manifest 的 device_id/geometry/serial 取值，勿按路径深度解析**——历史上有"扁平 / 器件一级 / 两级"三种布局并存。
