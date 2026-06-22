@@ -12,14 +12,15 @@ def _load_runner():
 def test_stage_registry_is_the_single_source_for_all_dry_order():
     runner = _load_runner()
 
-    # STAGE_REGISTRY = 协议目录(11 段确立基线 + 2026-06-11 后加的 MLC 多值);
-    # ALL_DRY = 确立的 11 段冒烟子集(execute_count/max_vectors 锚点稳定),**刻意不含 MLC**
-    # —— 新增协议不扰动既有 ALL_DRY 基线与契约;MLC 经 --stage MLC + 自己的金标准回归。
+    # STAGE_REGISTRY = 协议目录(11 段确立基线 + MLC 多值 + ISPP 闭环);
+    # ALL_DRY = 确立的 11 段冒烟子集(execute_count/max_vectors 锚点稳定),**刻意不含 MLC/ISPP**
+    # —— 新增协议不扰动既有 ALL_DRY 基线与契约;MLC/ISPP 经 --stage + 自己的回归。
     assert list(runner.STAGE_REGISTRY) == [
-        "S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE", "MLC"]
+        "S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE", "MLC", "ISPP"]
     assert runner.ALL_DRY_STAGES == (
         "S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE")
     assert "MLC" in runner.STAGE_REGISTRY and "MLC" not in runner.ALL_DRY_STAGES
+    assert "ISPP" in runner.STAGE_REGISTRY and "ISPP" not in runner.ALL_DRY_STAGES
     assert runner.STAGE_REGISTRY["E1"].output_label == "E1_RAWD_QUICK300ms_v2"
     assert runner.STAGE_REGISTRY["CYCLE"].output_label == "CYCLE_checkpoint_endurance"
     assert runner.STAGE_REGISTRY["E6D"].output_label == "E6D_halfVdd_disturb_delay"

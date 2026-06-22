@@ -60,9 +60,14 @@ def _cleanup(out_csv: Path) -> None:
             break
 
 
+# STAGES = 有金标准的 12 段(下方逐字节回归用);ISPP 是闭环新协议,不进金标准列表
+# (dry 读为占位、收敛轨迹无意义),但仍需在 REGISTRY 注册 + 被 covers 检查覆盖。
+COVERED = set(STAGES) | {"ISPP"}
+
+
 def test_registry_covers_all_eleven_stages():
-    assert set(REGISTRY) == set(STAGES)
-    for sid in STAGES:
+    assert set(REGISTRY) == COVERED
+    for sid in COVERED:
         assert callable(REGISTRY[sid].runner)
         assert REGISTRY[sid].family == "WGFMU"
 

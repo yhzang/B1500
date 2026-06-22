@@ -1339,6 +1339,106 @@ def run_stage_mlc(backend, args, *, callbacks=None) -> StageSummary:
     return _summarize(args, "MLC", out_csv, rows, "MLC_PROGRAM_AMPLITUDE_DONE")
 
 
+# ── ISPP 闭环增量步进编程(项目5 杀手锏:data-dependent 逐炮闭环,EasyEXPERT 开环模板表达不了)──
+ISPP_VG_START = 1.5       # 起始编程幅值 V
+ISPP_VG_STEP = 0.25      # 每步幅值增量 V
+ISPP_VG_MAX = 5.0        # 编程幅值上限 V(安全 + 终止条件)
+ISPP_MAX_STEPS = 16      # 步数硬上限(保证一定收敛/终止)
+ISPP_TARGET_ID_UA = 0.1  # 目标 |Id| @读Vg(µA),达到/超过即停
+ISPP_ID_TOL_UA = 0.001   # 饱和判据:相邻两步 |ΔId| 低于此(µA)= 无进展即停
+ISPP_V_ERASE = 5.0       # 起始统一擦除幅值(绝对值,实际打负)
+ISPP_WIDTH = 100e-6      # 编程/擦除脉宽 s
+ISPP_READ_VG = 0.5       # 读出 Vg V
+ISPP_VD_READ = 0.1       # 读出 Vd V
+ISPP_READ_DELAY = 10e-6  # 编程→读延迟 s
+
+
+def _ispp_next(id_read, prev_id, amp, *, target_id, tol, vg_step, vg_max):
+    """ISPP 闭环单步决策(纯函数,无硬件可单测)。
+
+    返回 (stop_reason | None, next_amp):
+      达标(|Id|≥target)/ 饱和(相邻两步 |ΔId|<tol)/ 触顶(下一步超 vg_max)→ 给 reason 并停;
+      否则 None + 下一步幅值。Vth 提取作为后续可选判据预留(改这里的 metric 即可)。
+    """
+    if np.isfinite(id_read) and abs(id_read) >= abs(target_id):
+        return "TARGET_REACHED", amp
+    if prev_id is not None and np.isfinite(id_read) and abs(id_read - prev_id) < tol:
+        return "SATURATED", amp
+    if amp + vg_step > vg_max + 1e-12:
+        return "VG_MAX", amp
+    return None, amp + vg_step
+
+
+def run_stage_ispp(backend, args, *, callbacks=None) -> StageSummary:
+    """ISPP 增量步进编程闭环:擦除到统一起点 → 逐步抬高编程幅值,每发后在固定读 Vg 读 Id,
+    直到 |Id| 达目标 / 饱和 / 触顶 / 步数上限。
+
+    这是 **data-dependent 逐炮闭环**——每炮读出决定下一炮是否继续/用多大幅值,正是
+    EasyEXPERT 开环预定义模板表达不了的那一类(项目5 核心差异点)。收敛判据:固定读 Vg 下的
+    Id(稳健、不易错);Vth 提取作为后续可选判据预留(见 `_ispp_next`)。
+    """
+    out_dir = _stage_dir(args, "ISPP_closed_loop")
+    read_vg = float(args.ispp_read_vg)
+    vd_read = float(args.ispp_vd_read)
+    width = float(args.ispp_width_s)
+    delay_s = float(args.ispp_read_delay_s)
+    target_id = float(args.ispp_target_id_uA) * 1e-6
+    tol = float(args.ispp_id_tol_uA) * 1e-6
+    vg_step = float(args.ispp_vg_step)
+    vg_max = float(args.ispp_vg_max)
+    max_steps = int(args.ispp_max_steps)
+    v_erase = abs(float(args.ispp_v_erase))
+    rows: list[dict] = []
+    seq = 0
+
+    def _record(rr, state, step, mode, note):
+        for r in rr:
+            rows.append({
+                "timestamp_iso": _dt.datetime.now().isoformat(timespec="seconds"),
+                "stage": "ISPP", "device_id": args.device_id, "geometry": args.geometry,
+                "sequence_id": seq, "repeat_index": step, "state_target": state,
+                "delay_s": delay_s, "dose_mode": mode, "n_read": "", **r, "note": note,
+            })
+
+    # 1) 擦除到统一起点(打负)
+    er = run_e1_shot(backend, state="ERS", delay_s=delay_s, vg_reads=[read_vg],
+                     vd_read=vd_read, n_pts=N_PTS, v_write=-v_erase, t_write=width)
+    _record(er, "ERASE", 0, "erase", f"ispp_erase_{v_erase:g}V")
+    _check_samples(er, "ISPP")
+    _check_ig(er, "ISPP", args.ispp_ig_stop_uA)
+    print(f"SHOT_OK: ISPP erase v=-{v_erase:g} seq={seq}")
+    if callbacks is not None:
+        callbacks.on_shot("ISPP", seq, er)
+    seq += 1
+
+    # 2) 闭环:逐步抬高编程幅值,读 Id,按测量结果决定是否继续(核心差异点)
+    amp = float(args.ispp_vg_start)
+    prev_id = None
+    stop_reason = "MAX_STEPS"
+    for step in range(max_steps):
+        rr = run_e1_shot(backend, state="PGM", delay_s=delay_s, vg_reads=[read_vg],
+                         vd_read=vd_read, n_pts=N_PTS, v_write=+abs(amp), t_write=width)
+        id_read = float(rr[0]["Id_mean_A"]) if rr else float("nan")
+        _record(rr, "PGM", step, f"vg={amp:+g}", f"ispp_step{step}_vg{amp:g}")
+        _check_samples(rr, "ISPP")
+        _check_ig(rr, "ISPP", args.ispp_ig_stop_uA)
+        print(f"SHOT_OK: ISPP step={step} vg={amp:+g} Id={id_read:.3e} seq={seq}")
+        if callbacks is not None:
+            callbacks.on_shot("ISPP", seq, rr)
+        seq += 1
+        reason, amp = _ispp_next(id_read, prev_id, amp, target_id=target_id,
+                                 tol=tol, vg_step=vg_step, vg_max=vg_max)
+        if reason is not None:
+            stop_reason = reason
+            break
+        prev_id = id_read
+
+    print(f"ISPP_CONVERGENCE: {stop_reason} program_shots={seq - 1} final_vg={amp:+g}")
+    out_csv = out_dir / "ispp_closed_loop.csv"
+    _write_rows(out_csv, rows)
+    return _summarize(args, "ISPP", out_csv, rows, "ISPP_CLOSED_LOOP_DONE")
+
+
 STAGE_REGISTRY = {
     "S0": StageSpec("S0", "S0_open_fixture_smoke", "open/fixture read-only smoke", run_stage_s0),
     "S1": StageSpec("S1", "S1_device_read_only_baseline", "device read-only baseline", run_stage_s1),
@@ -1353,6 +1453,8 @@ STAGE_REGISTRY = {
     "CYCLE": StageSpec("CYCLE", "CYCLE_checkpoint_endurance", "checkpointed cycle endurance", run_stage_cycle),
     "MLC": StageSpec("MLC", "MLC_program_amplitude_scan",
                      "multi-level program-amplitude scan (erase→program→single-point read)", run_stage_mlc),
+    "ISPP": StageSpec("ISPP", "ISPP_closed_loop",
+                      "incremental step-pulse programming (closed loop to target Id)", run_stage_ispp),
 }
 # ALL_DRY 仍是确立的 11 段冒烟基线(execute_count/max_vectors 锚点稳定);MLC 不纳入 ALL_DRY,
 # 单独经 --stage MLC + 自己的金标准回归。新增协议不扰动既有基线与契约测试。
@@ -1491,6 +1593,21 @@ def parse_args(argv=None):
     ap.add_argument("--mlc-n-pts", type=int, default=N_PTS, help="MLC 单点读的硬件平均点数(默认 5)")
     ap.add_argument("--mlc-reps", type=int, default=3)
     ap.add_argument("--mlc-ig-stop-uA", type=float, default=30.0)
+    # ISPP 闭环增量步进编程(项目5):每炮读 Id 决定下一炮,EasyEXPERT 开环模板做不到的闭环
+    ap.add_argument("--ispp-vg-start", type=float, default=ISPP_VG_START, help="ISPP 起始编程幅值 V")
+    ap.add_argument("--ispp-vg-step", type=float, default=ISPP_VG_STEP, help="ISPP 每步幅值增量 V")
+    ap.add_argument("--ispp-vg-max", type=float, default=ISPP_VG_MAX, help="ISPP 编程幅值上限 V")
+    ap.add_argument("--ispp-max-steps", type=int, default=ISPP_MAX_STEPS, help="ISPP 步数上限")
+    ap.add_argument("--ispp-target-id-uA", type=float, default=ISPP_TARGET_ID_UA,
+                    help="ISPP 目标 |Id| @读Vg(µA),达到/超过即停")
+    ap.add_argument("--ispp-id-tol-uA", type=float, default=ISPP_ID_TOL_UA,
+                    help="ISPP 饱和判据:相邻两步 |ΔId|(µA)低于此即停")
+    ap.add_argument("--ispp-v-erase", type=float, default=ISPP_V_ERASE, help="ISPP 起始擦除幅值(绝对值,打负)")
+    ap.add_argument("--ispp-width-s", type=float, default=ISPP_WIDTH, help="ISPP 编程/擦除脉宽 s")
+    ap.add_argument("--ispp-read-vg", type=float, default=ISPP_READ_VG, help="ISPP 读出 Vg V")
+    ap.add_argument("--ispp-vd-read", type=float, default=ISPP_VD_READ, help="ISPP 读出 Vd V")
+    ap.add_argument("--ispp-read-delay-s", type=float, default=ISPP_READ_DELAY, help="ISPP 编程→读延迟 s")
+    ap.add_argument("--ispp-ig-stop-uA", type=float, default=30.0, help="ISPP |Ig| 停门 µA")
     args = ap.parse_args(argv)
     args._argv = list(argv) if argv is not None else list(sys.argv[1:])
     return args

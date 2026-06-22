@@ -11,7 +11,7 @@ from fefetlab.engine import REGISTRY
 from fefetlab.engine.specs import ParamKind, Visibility, Widget
 from fefetlab.protocols.wgfmu_fefet import parse_args
 
-STAGES = ["S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE", "MLC"]
+STAGES = ["S0", "S1", "E1", "E2", "E3W", "E3A", "E4", "E5", "E6R", "E6D", "CYCLE", "MLC", "ISPP"]
 
 
 def _argparse_defaults() -> dict:
