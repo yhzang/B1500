@@ -34,7 +34,17 @@
 ## 保存路径
 输出根目录选择器(默认 ROOT,透传 ExperimentContext.root);run_log.txt(UTF-8 无 BOM);DC BOM `utf-8-sig`→`utf-8`(dc/export.py:81,143);WGFMU 主路径已无 BOM(export.py:38-46 正确);回流项目4(增量6,统一 UTF-8 无 BOM)。EasyEXPERT 蓝本:Workspace→Test Record 两级 + 导出粒度选择 + Preset 导入导出 + Backup/Restore。
 
-## 需要椰椰拍板的开放问题(answers 待填)
+## 开放问题决议(2026-06-22,椰椰确认 + claude 默认)
+- Q1 单位缩放:**只对 µs/ns/ms/µA/nA 做 spinbox 工程量缩放**,s/V 不缩放(默认)。
+- Q2 BOM:**全改 UTF-8 无 BOM**,改前 grep 确认无下游依赖 BOM(默认)。
+- Q3 DC 目录:RunBrowser **同时扫两套**,不动 DC 落盘(默认,留增量6)。
+- Q4 raw_data_mode:**ADVANCED + "仅限短采样"校验提示**(默认)。
+- Q5 measure/operation mode:**本轮锁死 "Fast IV + CURRENT"**,不暴露联动副作用大的旋钮(默认)。
+- Q6 实时图:**已实现**——实时 append,跑完用 CSV 重画一遍权威终图。
+- Q7 输出根目录默认:**保持 repo 根(现状)**,GUI 加选择器随时可改(椰椰确认 2026-06-22)。
+- 节奏:增量1 完成后**椰椰先在测试机看效果再继续**(椰椰确认 2026-06-22)。
+
+## (原始开放问题清单)需要椰椰拍板的开放问题
 1. **SI 单位缩放范围**:只对 µs/ns/ms/µA/nA 做 spinbox 工程量缩放(s/V 不缩放)?还是全部走工程记数法(像 EasyEXPERT `1.2345 mA`,更一致但改动大)?
 2. **其余 BOM 是否一并修**:增量3 只改 DC 两处;wgfmu/export.py:40-41、iv_sweep.py:238-239、wakeup.py:314-315 也带 BOM——是否一并改成 UTF-8 无 BOM(需确认无下游依赖 BOM)?
 3. **DC 目录契约**:DC 现扁平,WGFMU 两级。RunBrowser(增量6)要 DC 改两级同构,还是同时扫两套?
