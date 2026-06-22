@@ -59,6 +59,16 @@ class RunControlPanel(QWidget):
             self._id_edits[key] = le
             id_form.addRow(QLabel(lab), le)
 
+        # 输出根目录(默认空 = 仓库 runs/;可浏览改到别的盘)
+        self._out_root = QLineEdit()
+        self._out_root.setPlaceholderText("(默认:仓库 runs/)")
+        self._btn_browse = QPushButton("浏览…")
+        self._btn_browse.clicked.connect(self._browse_out_root)
+        out_row = QHBoxLayout()
+        out_row.addWidget(self._out_root)
+        out_row.addWidget(self._btn_browse)
+        id_form.addRow(QLabel("输出根目录"), out_row)
+
         # ── 模式 ──
         self._mode_box = QGroupBox("模式")
         mode_lay = QVBoxLayout(self._mode_box)
@@ -107,6 +117,10 @@ class RunControlPanel(QWidget):
     def identity(self) -> dict[str, str]:
         return {k: e.text().strip() for k, e in self._id_edits.items()}
 
+    def out_root(self) -> str:
+        """输出根目录(空 = 用仓库默认 ROOT)。"""
+        return self._out_root.text().strip()
+
     def is_live(self) -> bool:
         return self.rb_live.isChecked()
 
@@ -147,6 +161,13 @@ class RunControlPanel(QWidget):
         self.status.setStyleSheet("color:#B80000;" if error else "")
 
     # ── 内部 ────────────────────────────────────────────────────────────────
+    def _browse_out_root(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        d = QFileDialog.getExistingDirectory(self, "选择输出根目录")
+        if d:
+            self._out_root.setText(d)
+
     def _on_mode_toggled(self, _checked: bool) -> None:
         live = self.is_live()
         self._live_box.setVisible(live)

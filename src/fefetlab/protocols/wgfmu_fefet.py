@@ -748,7 +748,7 @@ def _write_rows(path: Path, rows: list[dict]) -> None:
 
 def _stage_dir(args, stage: str) -> Path:
     ctx = ExperimentContext(
-        root=ROOT,
+        root=Path(getattr(args, "out_root", "") or ROOT),
         device_id=args.device_id,
         geometry=args.geometry,
         serial=(getattr(args, "serial", "") or ""),
@@ -1608,6 +1608,8 @@ def parse_args(argv=None):
     ap.add_argument("--ispp-vd-read", type=float, default=ISPP_VD_READ, help="ISPP 读出 Vd V")
     ap.add_argument("--ispp-read-delay-s", type=float, default=ISPP_READ_DELAY, help="ISPP 编程→读延迟 s")
     ap.add_argument("--ispp-ig-stop-uA", type=float, default=30.0, help="ISPP |Ig| 停门 µA")
+    # 输出根目录(GUI 上位机用;空 = 仓库默认 runs/)。run 级设置,非 ParamSpec。
+    ap.add_argument("--out-root", default="", help="输出根目录(空=仓库默认 runs/)")
     args = ap.parse_args(argv)
     args._argv = list(argv) if argv is not None else list(sys.argv[1:])
     return args

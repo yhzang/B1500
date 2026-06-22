@@ -311,8 +311,8 @@ class WgfmuWakeupRunner:
             }
 
             self.exporter.save_result(df=samples, qc_df=qc_df, meta=meta, paths=paths)
-            cycles_df.to_csv(paths["cycles"], index=False, encoding="utf-8-sig")
-            samples.to_csv(paths["samples"], index=False, encoding="utf-8-sig")
+            cycles_df.to_csv(paths["cycles"], index=False, encoding="utf-8")
+            samples.to_csv(paths["samples"], index=False, encoding="utf-8")
             paths["plan_json"].write_text(
                 json.dumps(
                     {

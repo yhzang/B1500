@@ -37,6 +37,6 @@ class WgfmuDataExporter:
         meta: dict,
         paths: dict[str, Path],
     ) -> None:
-        df.to_csv(paths["parsed"], index=False, encoding="utf-8-sig")
-        qc_df.to_csv(paths["qc"], index=False, encoding="utf-8-sig")
+        df.to_csv(paths["parsed"], index=False, encoding="utf-8")
+        qc_df.to_csv(paths["qc"], index=False, encoding="utf-8")
         paths["meta"].write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")

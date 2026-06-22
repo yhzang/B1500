@@ -103,7 +103,8 @@ class EngineWorker(QObject):
             # 丢掉表单留空(None)的键,让 parse_args 默认兜底:
             # 否则清空一个有默认值的数值框会把 None 覆盖默认 → run_stage_* 里 range(None) 等崩。
             overrides = {k: v for k, v in req.params.items() if v is not None}
-            params = {**base, **overrides, "live": req.live}
+            params = {**base, **overrides, "live": req.live,
+                      "out_root": getattr(req, "out_root", "")}
             self.logMsg.emit("INFO", "RUN_START",
                              f"stage={req.stage} live={req.live} "
                              f"device_id={params.get('device_id')}")

@@ -199,3 +199,25 @@ def test_plotpanel_realtime_skips_nan_and_missing():
     pp._flush_live()
     xs, ys = pp._live_items["ERS"].getData()
     assert len(xs) == 1 and ys[0] == 5.0e-7
+
+
+def test_app_writes_run_log_no_bom(tmp_path):
+    """增量3:跑完把日志缓冲写进 run 目录 run_log.txt(UTF-8 无 BOM)。"""
+    _ensure_app()
+    from gui.app import MainWindow
+
+    win = MainWindow()
+    win.log_panel.append("INFO", "RUN_START", "stage=E1 live=False")
+    win.log_panel.append("STOP", "E1_STOP", "boom")
+
+    class _S:
+        report_code = "X_DONE"
+        out_csv = None
+
+    win._on_stage_done(_S(), str(tmp_path))
+    p = tmp_path / "run_log.txt"
+    assert p.exists()
+    raw = p.read_bytes()
+    assert not raw.startswith(b"\xef\xbb\xbf")  # 无 BOM
+    text = p.read_text(encoding="utf-8")
+    assert "RUN_START" in text and "E1_STOP" in text

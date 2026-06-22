@@ -61,6 +61,10 @@ class LogPanel(QWidget):
         self._entries.clear()
         self.view.clear()
 
+    def export_text(self) -> str:
+        """导出当前全部日志缓冲(不受过滤影响),供 run_log.txt 落盘。"""
+        return "\n".join(text for _level, text in self._entries)
+
     # ── 内部 ────────────────────────────────────────────────────────────────
     def _write_line(self, level: str, text: str) -> None:
         cursor = self.view.textCursor()

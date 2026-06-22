@@ -113,3 +113,20 @@ def test_cli_dry_run_writes_manifest_with_device_and_configurable_channels(tmp_p
     summaries = list((tmp_path / "runs").glob("**/summary.md"))
     assert len(summaries) == 1
     assert "# S0" in summaries[0].read_text(encoding="utf-8")
+
+
+def test_out_root_flag_redirects_stage_dir(tmp_path):
+    """增量3:--out-root 把 run 目录重定向到指定盘(GUI 输出根目录选择器的底座)。"""
+    runner = _load_runner()
+    args = runner.parse_args([
+        "--stage", "S0", "--device-id", "D", "--geometry", "L40W10",
+        "--out-root", str(tmp_path)])
+    d = runner._stage_dir(args, "S0_x")
+    assert str(tmp_path) in str(d)
+
+
+def test_out_root_default_is_empty_falls_back_to_root():
+    """不给 --out-root → 默认空 → _stage_dir 回退仓库 ROOT(椰椰定:默认仍 repo 根)。"""
+    runner = _load_runner()
+    args = runner.parse_args(["--stage", "S0", "--device-id", "D", "--geometry", "L40W10"])
+    assert getattr(args, "out_root", None) == ""

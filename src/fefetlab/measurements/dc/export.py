@@ -78,7 +78,7 @@ class DCDataExporter:
         paths = {}
 
         csv_path = run_dir / f"{basename}.csv"
-        df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+        df.to_csv(csv_path, index=False, encoding="utf-8")
         paths['csv'] = csv_path
 
         json_path = run_dir / f"{basename}.json"
@@ -140,7 +140,7 @@ class DCDataExporter:
 
         if run_dir is not None:
             qc_path = run_dir / f"{basename}.csv"
-            qc_df.to_csv(qc_path, index=False, encoding="utf-8-sig")
+            qc_df.to_csv(qc_path, index=False, encoding="utf-8")
 
         return qc_df
 

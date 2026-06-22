@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -105,7 +106,8 @@ class MainWindow(QMainWindow):
             return
         params.update(self.run_control.identity())
         req = RunRequest(stage=stage, params=params, live=live,
-                         confirm=self.run_control.confirm_text())
+                         confirm=self.run_control.confirm_text(),
+                         out_root=self.run_control.out_root())
         if not self.controller.start(req):
             self.run_control.set_status("已有运行在进行中", error=True)
             return
@@ -127,6 +129,12 @@ class MainWindow(QMainWindow):
         code = getattr(summary, "report_code", "")
         self.log_panel.append("INFO", code, f"完成 → {run_dir}")
         self.run_control.set_status(f"完成:{code}")
+        # run_log.txt 落盘(UTF-8 无 BOM;设计 §6.4):整段日志缓冲写进本 run 目录
+        try:
+            Path(run_dir).joinpath("run_log.txt").write_text(
+                self.log_panel.export_text(), encoding="utf-8")
+        except Exception as exc:  # noqa: BLE001
+            self.log_panel.append("WARN", "LOG", f"run_log 落盘失败:{exc}")
         try:
             from fefetlab.engine import REGISTRY
 

@@ -18,3 +18,4 @@ class RunRequest:
     params: dict[str, Any] = field(default_factory=dict)
     live: bool = False
     confirm: str = ""
+    out_root: str = ""              # 输出根目录(空 = 仓库默认 runs/);经 worker 注入 _stage_dir

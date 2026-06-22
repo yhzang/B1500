@@ -235,8 +235,8 @@ class WgfmuIVSweepRunner:
 
             # Persist
             self.exporter.save_result(df=samples, qc_df=qc_df, meta=meta, paths=paths)
-            iv_df.to_csv(paths["iv_curve"], index=False, encoding="utf-8-sig")
-            samples.to_csv(paths["samples"], index=False, encoding="utf-8-sig")
+            iv_df.to_csv(paths["iv_curve"], index=False, encoding="utf-8")
+            samples.to_csv(paths["samples"], index=False, encoding="utf-8")
             import json
             paths["plan_json"].write_text(
                 json.dumps(
