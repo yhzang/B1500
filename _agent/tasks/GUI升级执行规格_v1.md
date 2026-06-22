@@ -5,8 +5,9 @@
 > **目录契约以代码为准**:现行两级 `runs/<device>/<die>/{live,dry}/<ts>_<stage>`(orchestration/export.py:28-35);设计文档 §6.4/§6.5/§10.4 的旧 `runs/{dry,live}/<ts>_<STAGE>_<dev>` 已过时。
 
 ## 增量顺序(按价值/风险)
-1. **on_shot 实时增量绘图** ← 第一个赢。链路已全通到 controller,唯一断点 `app.py:_wire()` 没接 PlotPanel。plot_panel 加 `begin_live_plot(schema)`+`append_shot_rows(stage,seq,rows)`(环形缓冲、33ms QTimer 限频、>4000 点降采样、ERS#2659AD/PGM#B80000);app.py `_wire` 接 `c.shot`、`_on_run` 提交后 `begin_live_plot`。风险低。
-2. **ParamForm typed 控件 + 单位 + 校验** — 全重写 param_form.py:103-149,按 `ParamSpec.widget` 分 QSpinBox/QDoubleSpinBox(带 SI 单位后缀,collect 还原 SI)/QComboBox/只读 CHANNEL/CSV 校验;非法红框禁运行。风险中(collect SI 还原口径,要加 GUI 单测)。
+1. ✅ **on_shot 实时增量绘图(完成 commit b337910)** — plot_panel `begin_live_plot/append_shot_rows`(环形缓冲、33ms QTimer 限频、>4000 点降采样、ERS/PGM 配色);app `_wire` 接 `c.shot`、`_on_run` 提交后 `begin_live_plot`。真机 `tests/` 绿。
+2. ✅ **ParamForm typed 控件 + 单位 + 校验(完成 commit 4b9c394)** — 按 kind/widget 渲染 QSpinBox/QDoubleSpinBox(时间单位 µs/ns/ms 做 SI 缩放,µA 不缩放)/QComboBox/只读 LOCKED/CSV 校验红框+is_valid;None 默认留可空。真机 `tests/` 102 passed。
+   — 附带:ISPP 闭环协议(项目5 杀手锏)已注册进 REGISTRY,GUI 协议树自动出现、typed 表单 + 实时图都对它生效。
 3. **输出根目录选择 + run_log.txt 落盘 + DC BOM 修复** — run_control_panel 加输出根目录选择器→RunRequest→`ExperimentContext(root=)`(需 wgfmu_fefet._stage_dir:749-758 允许 root 注入);`_on_stage_done` 写 `run_dir/run_log.txt`(UTF-8 无 BOM);dc/export.py:81,143 `utf-8-sig`→`utf-8`。风险低-中。
 4. **提升剩余硬编码旋钮**(见下表) — 先 runner 加 flag、再 registry 加 ParamSpec,`pytest tests/test_registry_params.py` 守门。风险中。
 5. **可视化进阶** — log 轴(delay_s log-X、Y log|Id|)、手动范围 spinbox+自动缩放、InfiniteLine 游标、Id/Ig 通道显隐、Id_std 误差棒、MW=Id_ERS−Id_PGM 派生线。风险中。
