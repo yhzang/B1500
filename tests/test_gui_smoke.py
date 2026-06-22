@@ -201,6 +201,65 @@ def test_plotpanel_realtime_skips_nan_and_missing():
     assert len(xs) == 1 and ys[0] == 5.0e-7
 
 
+def _fefet_df():
+    import pandas as pd
+    return pd.DataFrame({
+        "state_target": ["ERS", "ERS", "PGM", "PGM"],
+        "delay_s": [1e-5, 1e-3, 1e-5, 1e-3],
+        "Id_mean_A": [1e-6, 1.1e-6, -2e-6, -2.1e-6],
+        "Id_std_A": [1e-8, 1e-8, 1e-8, 1e-8],
+        "Ig_mean_A": [1e-9, 1e-9, 1e-9, 1e-9],
+    })
+
+
+def test_fefet_plots_show_ig_adds_curves():
+    """增量5:options show_ig=True 多画 Ig 曲线(安全量)。"""
+    pytest.importorskip("pyqtgraph")
+    _ensure_app()
+    import pyqtgraph as pg
+
+    from gui.adapters.fefet_plots import plot_fefet_fixedcols
+
+    df = _fefet_df()
+    w1 = pg.PlotWidget()
+    plot_fefet_fixedcols(df, w1, live=False, options={"show_id": True, "show_ig": False})
+    w2 = pg.PlotWidget()
+    plot_fefet_fixedcols(df, w2, live=False, options={"show_id": True, "show_ig": True})
+    assert len(w2.listDataItems()) > len(w1.listDataItems())
+
+
+def test_fefet_plots_error_bars():
+    """增量5:options error_bars=True 加 Id_std 误差棒。"""
+    pytest.importorskip("pyqtgraph")
+    _ensure_app()
+    import pyqtgraph as pg
+
+    from gui.adapters.fefet_plots import plot_fefet_fixedcols
+
+    w = pg.PlotWidget()
+    plot_fefet_fixedcols(_fefet_df(), w, live=False, options={"show_id": True, "error_bars": True})
+    assert any(isinstance(it, pg.ErrorBarItem) for it in w.plotItem.items)
+
+
+def test_plotpanel_viz_toggle_replots(tmp_path):
+    """增量5:结果图缓存 df;勾 Ig 触发重画(不重读 CSV);log 轴开关不崩。"""
+    pytest.importorskip("pyqtgraph")
+    _ensure_app()
+    from gui.plot_panel import PlotPanel
+
+    csv = tmp_path / "r.csv"
+    _fefet_df().to_csv(csv, index=False)
+    pp = PlotPanel()
+    pp.show_result(str(csv), "fefet_fixedcols", live=False)
+    assert pp._last_result is not None
+    n0 = len(pp._result.listDataItems())
+    pp._cb_ig.setChecked(True)              # toggled → _replot_result
+    assert len(pp._result.listDataItems()) > n0
+    pp._cb_logx.setChecked(True)            # toggled → _apply_axes(不崩)
+    pp._cb_cursor.setChecked(True)          # 游标开(addItem 不崩)
+    pp._cb_cursor.setChecked(False)         # 游标关(removeItem 不崩)
+
+
 def test_app_writes_run_log_no_bom(tmp_path):
     """增量3:跑完把日志缓冲写进 run 目录 run_log.txt(UTF-8 无 BOM)。"""
     _ensure_app()
