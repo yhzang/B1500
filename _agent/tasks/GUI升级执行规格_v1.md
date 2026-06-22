@@ -8,7 +8,7 @@
 1. ✅ **on_shot 实时增量绘图(完成 commit b337910)** — plot_panel `begin_live_plot/append_shot_rows`(环形缓冲、33ms QTimer 限频、>4000 点降采样、ERS/PGM 配色);app `_wire` 接 `c.shot`、`_on_run` 提交后 `begin_live_plot`。真机 `tests/` 绿。
 2. ✅ **ParamForm typed 控件 + 单位 + 校验(完成 commit 4b9c394)** — 按 kind/widget 渲染 QSpinBox/QDoubleSpinBox(时间单位 µs/ns/ms 做 SI 缩放,µA 不缩放)/QComboBox/只读 LOCKED/CSV 校验红框+is_valid;None 默认留可空。真机 `tests/` 102 passed。
    — 附带:ISPP 闭环协议(项目5 杀手锏)已注册进 REGISTRY,GUI 协议树自动出现、typed 表单 + 实时图都对它生效。
-3. **输出根目录选择 + run_log.txt 落盘 + DC BOM 修复** — run_control_panel 加输出根目录选择器→RunRequest→`ExperimentContext(root=)`(需 wgfmu_fefet._stage_dir:749-758 允许 root 注入);`_on_stage_done` 写 `run_dir/run_log.txt`(UTF-8 无 BOM);dc/export.py:81,143 `utf-8-sig`→`utf-8`。风险低-中。
+3. ✅ **输出根目录 + run_log.txt + 无 BOM CSV(完成 commit a1cdb95)** — run_control_panel 输出根目录选择器(默认空=repo ROOT,椰椰定)→RunRequest.out_root→worker→`_stage_dir(root=getattr(args,'out_root','') or ROOT)`;`_on_stage_done` 写 `run_dir/run_log.txt`(UTF-8 无 BOM);**全部 8 处 CSV 写入 `utf-8-sig`→`utf-8`**(dc/wgfmu export、iv_sweep、wakeup;FIELDNAMES 走 orchestration/export.py 本就无 BOM,golden 169/640 不动)。真机 `tests/` 106 passed。
 4. **提升剩余硬编码旋钮**(见下表) — 先 runner 加 flag、再 registry 加 ParamSpec,`pytest tests/test_registry_params.py` 守门。风险中。
 5. **可视化进阶** — log 轴(delay_s log-X、Y log|Id|)、手动范围 spinbox+自动缩放、InfiniteLine 游标、Id/Ig 通道显隐、Id_std 误差棒、MW=Id_ERS−Id_PGM 派生线。风险中。
 6. **DC 协议族 ParamSpec + RunBrowserPanel**(历史浏览/多 run 叠加/回流项目4) — 最大块,最后做。风险高。
