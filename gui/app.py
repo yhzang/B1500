@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QSplitter,
+    QTabWidget,
 )
 
 from . import adapters  # noqa: F401  触发 plot_dispatch 注册(FeFET 画法)
@@ -23,6 +24,7 @@ from .log_panel import LogPanel
 from .models import RunRequest
 from .plot_panel import PlotPanel
 from .protocol_panel import ProtocolPanel
+from .run_browser_panel import RunBrowserPanel
 from .run_control_panel import RunControlPanel
 
 
@@ -48,7 +50,13 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 2)
         splitter.setStretchFactor(2, 4)
-        self.setCentralWidget(splitter)
+
+        # 中央分两页:测量(协议+参数+实时图)/ 历史浏览(增量6 RunBrowser)
+        self.run_browser = RunBrowserPanel()
+        central = QTabWidget()
+        central.addTab(splitter, "测量")
+        central.addTab(self.run_browser, "历史浏览")
+        self.setCentralWidget(central)
 
         log_dock = QDockWidget("日志", self)
         log_dock.setWidget(self.log_panel)

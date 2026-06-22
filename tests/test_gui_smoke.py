@@ -260,6 +260,55 @@ def test_plotpanel_viz_toggle_replots(tmp_path):
     pp._cb_cursor.setChecked(False)         # 游标关(removeItem 不崩)
 
 
+def _mk_run(root, device, die, mode, run, csvname, stage="E1"):
+    from pathlib import Path
+    d = Path(root) / "runs" / device / die / mode / run
+    d.mkdir(parents=True, exist_ok=True)
+    (d / csvname).write_text("state_target,delay_s,Id_mean_A\nERS,1e-5,1e-6\n", encoding="utf-8")
+    (d / "manifest.yaml").write_text(f"stage: {stage}\ndevice_id: {device}\n", encoding="utf-8")
+    return d
+
+
+def test_scan_runs_two_level_layout(tmp_path):
+    """增量6:scan_runs 纯函数扫两级 run 布局。"""
+    from gui.run_browser_panel import scan_runs
+
+    _mk_run(tmp_path, "DEV1", "die1", "dry", "20260101_000000_E1", "e1.csv", stage="E1")
+    _mk_run(tmp_path, "DEV1", "die1", "live", "20260102_000000_S0", "s0.csv", stage="S0")
+    _mk_run(tmp_path, "DEV2", "dieA", "dry", "20260103_000000_E5", "e5.csv", stage="E5")
+    entries = scan_runs(str(tmp_path))
+    assert len(entries) == 3
+    assert {e["device"] for e in entries} == {"DEV1", "DEV2"}
+    e1 = [e for e in entries if e["run"].endswith("E1")][0]
+    assert e1["stage"] == "E1" and e1["mode"] == "dry" and e1["csv"].endswith("e1.csv")
+
+
+def test_scan_runs_prefers_primary_over_qc(tmp_path):
+    from gui.run_browser_panel import scan_runs
+
+    d = _mk_run(tmp_path, "DEV1", "die1", "dry", "20260101_000000_E1", "e1.csv")
+    (d / "e1_qc.csv").write_text("x\n1\n", encoding="utf-8")
+    entries = scan_runs(str(tmp_path))
+    assert len(entries) == 1 and entries[0]["csv"].endswith("e1.csv")
+
+
+def test_scan_runs_empty(tmp_path):
+    from gui.run_browser_panel import scan_runs
+
+    assert scan_runs(str(tmp_path)) == []
+
+
+def test_run_browser_panel_constructs_and_lists(tmp_path):
+    pytest.importorskip("pyqtgraph")
+    _ensure_app()
+    from gui.run_browser_panel import RunBrowserPanel
+
+    _mk_run(tmp_path, "DEVX", "die1", "dry", "20260101_000000_E1", "e1.csv")
+    p = RunBrowserPanel(root=str(tmp_path))
+    assert p.tree.topLevelItemCount() >= 1
+    assert len(p._entries) == 1
+
+
 def test_app_writes_run_log_no_bom(tmp_path):
     """增量3:跑完把日志缓冲写进 run 目录 run_log.txt(UTF-8 无 BOM)。"""
     _ensure_app()
