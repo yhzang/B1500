@@ -9,7 +9,8 @@
 2. ✅ **ParamForm typed 控件 + 单位 + 校验(完成 commit 4b9c394)** — 按 kind/widget 渲染 QSpinBox/QDoubleSpinBox(时间单位 µs/ns/ms 做 SI 缩放,µA 不缩放)/QComboBox/只读 LOCKED/CSV 校验红框+is_valid;None 默认留可空。真机 `tests/` 102 passed。
    — 附带:ISPP 闭环协议(项目5 杀手锏)已注册进 REGISTRY,GUI 协议树自动出现、typed 表单 + 实时图都对它生效。
 3. ✅ **输出根目录 + run_log.txt + 无 BOM CSV(完成 commit a1cdb95)** — run_control_panel 输出根目录选择器(默认空=repo ROOT,椰椰定)→RunRequest.out_root→worker→`_stage_dir(root=getattr(args,'out_root','') or ROOT)`;`_on_stage_done` 写 `run_dir/run_log.txt`(UTF-8 无 BOM);**全部 8 处 CSV 写入 `utf-8-sig`→`utf-8`**(dc/wgfmu export、iv_sweep、wakeup;FIELDNAMES 走 orchestration/export.py 本就无 BOM,golden 169/640 不动)。真机 `tests/` 106 passed。
-4. **提升剩余硬编码旋钮**(见下表) — 先 runner 加 flag、再 registry 加 ParamSpec,`pytest tests/test_registry_params.py` 守门。风险中。
+4. ✅(部分) **提升硬编码旋钮(完成 commit eb0f787)** — 经 configure_channel_map 一次性注入运行时全局(波形构建零改动、golden 169/640 不动):**read_irange_gate/drain(CHOICE 下拉)、n_pts、raw_data_mode(CHOICE)** 已提升进 COMMON,所有协议共有、GUI 自动出下拉/spinbox。真机 107 passed,gatekeeper 逐字节守门。
+   - **遗留(增量4b)**:t_rf/t_read/t_neutral/t_reset —— 这 4 个时间常量散作字面量/参数默认遍布 ~40 处波形构建点,深度串改、golden 风险高、日常少改,单列后做。
 5. **可视化进阶** — log 轴(delay_s log-X、Y log|Id|)、手动范围 spinbox+自动缩放、InfiniteLine 游标、Id/Ig 通道显隐、Id_std 误差棒、MW=Id_ERS−Id_PGM 派生线。风险中。
 6. **DC 协议族 ParamSpec + RunBrowserPanel**(历史浏览/多 run 叠加/回流项目4) — 最大块,最后做。风险高。
 
