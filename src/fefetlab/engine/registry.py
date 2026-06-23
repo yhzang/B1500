@@ -345,6 +345,95 @@ _SMU_PARAMS = {
 }
 
 
+# ── 单写族(E1S/E6S/E6M,2026-06-23 升格进 REGISTRY)。脆弱 L10 每 shot 只写一次——
+#    项目4 真实实验的主力协议(多写 E1/E6R/E6D 在脆弱器件上第二炮即塌)。runner 来自
+#    protocols.wgfmu_single_shot(逻辑零改写,golden 字节不变)。所有 ParamSpec cli_flag=None
+#    (单写 CLI 与 wgfmu argparse 分离),故 test_registry_params 的 argparse 比对自动跳过 ──
+def _ssp(name, kind, default, *, label, unit="", vis=V.BASIC, widget=W.DOUBLE_SPINBOX,
+         choices=None, minimum=None, help=""):
+    return ParamSpec(name=name, label=label, kind=kind, default=default, unit=unit,
+                     visibility=vis, minimum=minimum, maximum=None, choices=choices,
+                     widget=widget, cli_flag=None, help=help)
+
+
+_SS_COMMON = (
+    _ssp("gate_ch", K.INT, 202, label="Gate 通道", vis=V.LOCKED, widget=W.CHANNEL,
+         help="接 Gate 的 WGFMU 通道(接线铁律)"),
+    _ssp("drain_ch", K.INT, 201, label="Drain 通道", vis=V.LOCKED, widget=W.CHANNEL,
+         help="接 Drain 的 WGFMU 通道"),
+    _ssp("allowed_channels", K.INT_LIST, "201,202,301", label="允许通道集", vis=V.LOCKED, widget=W.CSV_LINE),
+    _ssp("forbidden_channels", K.INT_LIST, "302", label="禁用通道集", vis=V.LOCKED, widget=W.CSV_LINE),
+    _ssp("write_v", K.FLOAT, None, label="写脉冲幅值", unit="V", help="ERS=+|v|/PGM=-|v|;留空=±5V"),
+    _ssp("t_write_s", K.FLOAT, None, label="写脉冲宽度", unit="s", help="留空=100µs"),
+    _ssp("vd_read", K.FLOAT, 0.05, label="读出 Vd", unit="V"),
+    _ssp("n_pts", K.INT, 5, label="读窗平均点数", vis=V.ADVANCED, widget=W.SPINBOX, minimum=1),
+    _ssp("seed", K.INT, 20260603, label="随机种子", vis=V.ADVANCED, widget=W.SPINBOX),
+    _ssp("live", K.BOOL, False, label="联机(真机)", vis=V.ADVANCED, widget=W.CHECKBOX,
+         help="True=驱动真机(须一段一确认);False=dry"),
+)
+
+_WS = _ssp("write_state", K.CHOICE, "BOTH", label="写态", widget=W.COMBO, choices=("ERS", "PGM", "BOTH"),
+           help="写哪个态;单态=1写/器件(最小双极应力,脆弱器件首选);BOTH=ERS+PGM 两写")
+
+_SINGLE_SHOT_PARAMS = {
+    "E1S": (
+        _ssp("read_vg", K.FLOAT_LIST, "-1.0,-0.7,-0.4,-0.2,0.0", label="读出 Vg 点", unit="V",
+             widget=W.CSV_LINE, help="[0]=主 MW 读点;读序即此列表顺序(读序两臂改这里,如 -0.5,-0.7,-1.0,...)"),
+        _ssp("delays", K.FLOAT_LIST, "1e-6,1e-5,1e-4,1e-3,1e-2,1e-1,1.0", label="写后读延迟", unit="s",
+             widget=W.CSV_LINE, help="写一次后按递增延迟反复读(不重写)"),
+        _WS,
+        _ssp("reps", K.INT, 1, label="每态重复", widget=W.SPINBOX, minimum=1),
+        _ssp("t_read_s", K.FLOAT, 5e-6, label="单次读时长", unit="s", vis=V.ADVANCED),
+        _ssp("rich_read", K.BOOL, False, label="rich-read 表征", vis=V.ADVANCED, widget=W.CHECKBOX,
+             help="写前 pristine + 写后表征转移曲线(只读不增写),出 Vth/gm/SS + 双Vd 分离"),
+        _ssp("rich_vg", K.FLOAT_LIST, "0.0,-0.1,-0.2,-0.3,-0.4,-0.5,-0.6,-0.7,-0.8,-0.9,-1.0,-1.1,-1.2",
+             label="rich Vg 网格", unit="V", widget=W.CSV_LINE, vis=V.ADVANCED),
+        _ssp("rich_vd", K.FLOAT_LIST, "0.05,0.15", label="rich Vd 集", unit="V", widget=W.CSV_LINE, vis=V.ADVANCED),
+        _ssp("e1s_ig_stop_uA", K.FLOAT, 20.0, label="|Ig| 停门", unit="µA", vis=V.ADVANCED, minimum=0.0),
+        *_SS_COMMON,
+    ),
+    "E6S": (
+        _ssp("read_vg", K.FLOAT_LIST, "-1.0,-0.7", label="读出 Vg 点", unit="V", widget=W.CSV_LINE,
+             help="[0]=主 MW 读点,[1]=gm 邻点(算 dVth)"),
+        _ssp("disturb_amp", K.FLOAT, 2.5, label="扰动幅值", unit="V", help="符号与写态相反;½Vdd≈2.0 / ⅓Vdd≈1.33"),
+        _ssp("disturb_width_s", K.FLOAT, 100e-6, label="扰动脉宽", unit="s"),
+        _ssp("post_delays", K.FLOAT_LIST, "1e-6,1e-4,1e-2", label="扰后读延迟", unit="s", widget=W.CSV_LINE),
+        _ssp("neutral_wait_s", K.FLOAT, 10e-6, label="读-扰间隔", unit="s", vis=V.ADVANCED),
+        _ssp("wide_recovery", K.BOOL, False, label="宽恢复延迟", vis=V.ADVANCED, widget=W.CHECKBOX,
+             help="扰后恢复延迟 1µs..100s(trap 再发射扫描)"),
+        _WS,
+        _ssp("reps", K.INT, 1, label="每态重复", widget=W.SPINBOX, minimum=1),
+        _ssp("t_read_s", K.FLOAT, 5e-6, label="单次读时长", unit="s", vis=V.ADVANCED),
+        _ssp("e6s_ig_stop_uA", K.FLOAT, 30.0, label="|Ig| 停门", unit="µA", vis=V.ADVANCED, minimum=0.0),
+        *_SS_COMMON,
+    ),
+    "E6M": (
+        _ssp("read_vg", K.FLOAT_LIST, "-1.0,-0.7", label="读出 Vg 点", unit="V", widget=W.CSV_LINE),
+        _ssp("checkpoints", K.INT_LIST, "1,3,10,30,100,300,1000", label="N 检查点", widget=W.CSV_LINE,
+             help="在这些累积扰动次数处回读"),
+        _ssp("disturb_amp", K.FLOAT, 2.5, label="扰动幅值(亚临界)", unit="V"),
+        _ssp("disturb_width_s", K.FLOAT, 100e-6, label="扰动脉宽", unit="s"),
+        _ssp("interval_s", K.FLOAT, 1e-6, label="脉冲间隔 Toff", unit="s", help="越大恢复越多(Toff 扫描)"),
+        _ssp("e6m_state", K.CHOICE, "BOTH", label="扰动态", widget=W.COMBO, choices=("ERS", "PGM", "BOTH")),
+        _ssp("reps", K.INT, 1, label="每态重复", widget=W.SPINBOX, minimum=1),
+        _ssp("e6m_ig_stop_uA", K.FLOAT, 30.0, label="|Ig| 停门", unit="µA", vis=V.ADVANCED, minimum=0.0),
+        *_SS_COMMON,
+    ),
+}
+
+_META_SS = {
+    "E1S": ("单写 retention(保持)", "retention", "保持/弛豫(单写)"),
+    "E6S": ("单发 disturb(扰动)", "read-disturb", "扰动(单写)"),
+    "E6M": ("累积 disturb(耐扰)", "read-disturb", "扰动(单写)"),
+}
+
+_SS_DESC = {
+    "E1S": "单写保持:reset→写一次→(等 delay→读)×N,看同一态弛豫(脆弱器件刚需)",
+    "E6S": "单发扰动:reset→写→读[pre]→扰动→(等→读[post])×N,出 dId/dVth",
+    "E6M": "累积扰动:写一次→基线读→亚临界扰动脉冲串,在 N 检查点回读(disturb train)",
+}
+
+
 def _build_registry() -> dict[str, ProtocolSpec]:
     registry: dict[str, ProtocolSpec] = {}
     for sid, sspec in STAGE_REGISTRY.items():
@@ -376,6 +465,16 @@ def _build_registry() -> dict[str, ProtocolSpec]:
             group=group,
             output_label=sspec.output_label,
             runner=sspec.runner,
+        )
+    # ── 单写族(E1S/E6S/E6M,2026-06-23):脆弱 L10 每 shot 只写一次,纯加法 ──
+    from ..protocols.wgfmu_single_shot import run_stage_e1s, run_stage_e6m, run_stage_e6s
+    _ss_runners = {"E1S": run_stage_e1s, "E6S": run_stage_e6s, "E6M": run_stage_e6m}
+    for sid, runner in _ss_runners.items():
+        title, physics, group = _META_SS[sid]
+        registry[sid] = ProtocolSpec(
+            id=sid, title=title, family="WGFMU", physics=physics,
+            description=_SS_DESC[sid], params=_SINGLE_SHOT_PARAMS[sid],
+            csv_schema="fefet_fixedcols", group=group, output_label=sid, runner=runner,
         )
     # ── 声明式自定义协议(项目5 M2 DSL,纯加法、family=CUSTOM 隔离,绝不碰 golden)──
     from ..protocols.declared.registry_glue import build_declared_specs
