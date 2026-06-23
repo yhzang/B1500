@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-06-23 → GUI 上位机"完整化"收口 + 全绿 131 + 可回退安全网(⭐新会话从这接)
+
+**椰椰目标**:把测试机代码备份成可回退,然后把在建 GUI 改成"完整可用上位机,参考 EasyEXPERT,专属 FeFET,保留其他存储器预留位",测试确保功能全部正常再停。
+
+**接力状态(全部 scp 到测试机 + 真机 pytest 绿)**:
+- **可回退安全网**:G 盘 git checkpoint `6703392` + tag **`pre-gui-rebuild-20260623`**(回退 = `git reset --hard pre-gui-rebuild-20260623`)+ 全历史 bundle `C:\Users\Administrator\.claude\tmp\B1500_pre_gui_rebuild_20260623.bundle`;测试机物理备份 `D:\test\B1500_backup_pre_gui_20260623`。
+- **现状澄清**:GUI 非从零——M1 引擎 + `gui/` 16 文件早落地、`python -m gui` 本就能起。本轮=**完整化打磨 + 测试坐实**,非重写。MainWindow 在 `gui/app.py`(无独立 main_window.py)。
+- **本轮新增/改(均已 scp + 测试机绿)**:
+  ① `tests/conftest.py`:offscreen 兜底——**自动 strip 掉 cmd `set VAR=offscreen &&` 的尾随空格**(根治 06-17 坑①,曾让首个建窗测试 exit 9 假"段错误")+ setdefault offscreen + 会话级 `qapp` fixture(不依赖 pytest-qt)。
+  ② `gui/app.py`:菜单栏(文件/视图/设备/帮助)+ 状态栏接线指示(Gate=202/Drain=201/CH302禁用)+ QSettings 布局持久化 + 接线/关于对话框 + `--selftest` 无人值守冒烟 + on_shot→max|Ig| 安全指标。
+  ③ `gui/run_control_panel.py`:"预检/安全"组(接线状态行 + 本轮 max|Ig| 着色)+ reset_safety/update_safety。
+  ④ 扩展缝坐实:`tests/test_extensibility_seam.py`(假 RRAM family 自动出 tab + 新 csv_schema 分派 + 壳层无 FeFET 协议码硬编码)+ 指南 `_agent/references/扩展_新增存储器类型指南.md`。
+  ⑤ worker 集成测试 `tests/test_engine_worker.py`(WGFMU E1 + DC_IDVG 两 family dry 真跑通——壳里唯一"按运行"路径,此前零覆盖)。
+  ⑥ `gui/__init__.py` 文档串改 raw(去 `\B` SyntaxWarning)。
+- **验证**:测试机 `pytest tests/` = **131 passed**(120→+11);`python -m gui --selftest`(offscreen)**exit 0**(真起主窗口+事件循环+干净退出);金标准 ALL_DRY **169/640 不破**。
+- **"完整可用"边界(诚实)**:dry-run 全链路 + DC 卡片 + 扩展缝 = **已测可用**;**live 真机 / 会话恢复(M4)= UI/安全门已接但未在真机验证**(需接 B1500 + 器件,有烧器件风险,留椰椰本地确认);M5 自定义配方 DSL / M6 PyInstaller 打包 = **预留未做**(椰椰说"以后可加")。
+
+**椰椰待办**:① 测试机**桌面**双击 `run_gui.bat` 亲眼看界面(SSH 起的窗口不在它显示器上);② git push(本轮 commit 未推,需代理);③ 决定要不要继续 live 真机联调(M4)/ 自定义配方(M5)/ 打包(M6)。
+
+**坑沿用**:远程 `pytest tests/`(限定目录,别 bare,会收集旧用例/开真机 VISA);`set "QT_QPA_PLATFORM=offscreen"`(加引号——现 conftest 已兜底但 shell 仍建议加)。
+
+---
+
 ## 2026-06-22 → SSH 闭环打通 + M1 Step1(on_shot)/Step2(B7) done＋真机验证
 
 **椰椰问"你是可以 ssh 连接的吧"→ 是,且已闭环。** 分析机本身在 Tailscale 网内,`ssh administrator@100.108.189.9` 免密 + `scp` + 远程 `pytest` 全通(DERP 中继)。上一会话连不上是网络隔离的 Cowork 沙箱(另一套环境),与本机无关;UU远程鼠标/剪贴板绕路作废。**以后一改一验证我自己闭环:G 盘改 → scp 推 → 远程 pytest → 读结果。**

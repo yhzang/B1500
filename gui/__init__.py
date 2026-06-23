@@ -1,4 +1,4 @@
-"""B1500 FeFET 上位机(PySide6 GUI)· 初版骨架。
+r"""B1500 FeFET 上位机(PySide6 GUI)。
 
 设计文档:`_agent/references/B1500_GUI架构设计_PySide6.md`(§5 GUI)。
 

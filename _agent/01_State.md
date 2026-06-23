@@ -1,7 +1,17 @@
 # 当前状态
 
-- 更新时间：2026-06-22 CST（claude；SSH 闭环 + M1 Step1/B7 收尾，06-11 口径下沉为历史）
-- 当前目标：**把项目3 从散脚本重构成测试机本地 PySide6 上位机**（远程只为开发，装好即独立运行）。设计文档：`_agent/references/B1500_GUI架构设计_PySide6.md` + `_agent/references/B1500_自定义测试配方与接线档案_设计.md`。
+- 更新时间：2026-06-23 CST（claude；GUI 上位机完整化收口 + 全绿 131，06-22 收尾下沉为历史）
+- 当前目标：**项目3 = 测试机本地 PySide6 上位机，已"完整可用"**（dry 全链路 + DC 卡片 + 扩展缝，`pytest tests/` 131 绿，`python -m gui --selftest` exit 0）。设计文档：`_agent/references/B1500_GUI架构设计_PySide6.md` + `..._自定义测试配方与接线档案_设计.md`；扩展指南：`_agent/references/扩展_新增存储器类型指南.md`。
+
+## 2026-06-23 GUI 上位机"完整化"收口（权威，claude）
+
+**一句话**：在建 GUI 补成完整可用上位机（菜单/状态栏接线指示/QSettings 布局持久化/预检安全指标/扩展缝坐实），**测试机 `pytest tests/` = 131 passed、`python -m gui --selftest` exit 0**，金标准 ALL_DRY 169/640 不破。详见 05_Handoff 顶条。
+
+- **可回退**：tag `pre-gui-rebuild-20260623`（`git reset --hard` 即回退）+ 全历史 bundle（scratch）+ 测试机 `D:\test\B1500_backup_pre_gui_20260623`。
+- **本轮交付**：`tests/conftest.py` offscreen 兜底（strip cmd 尾随空格根治假"段错误"）+ qapp fixture；`gui/app.py` 菜单/状态栏/QSettings/`--selftest`/安全指标；`gui/run_control_panel.py` 预检+安全组；`tests/test_extensibility_seam.py`+扩展指南；`tests/test_engine_worker.py`（WGFMU+DC 两 family dry 跑通）；测试 120→131。
+- **完整可用边界（诚实）**：dry 全链路 + DC + 扩展缝 = 已测；**live(M4) / 自定义配方(M5) / 打包(M6) = UI 已接或预留，未真机验证**（椰椰说以后可加）。
+- **M1 余项重评**：BackendManager / build_argparser / 去模块全局 属重构、有破金标准风险、GUI 不依赖 → 本轮 **deferred**；DC mock(MockB1500) / make_backend_for 已在且 worker 测试覆盖。
+
 
 ## 2026-06-22 SSH 闭环 + M1 收尾推进（权威，claude）
 

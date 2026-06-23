@@ -1,11 +1,12 @@
-"""RunControlPanel · 器件身份 + dry/live + 运行/停止 + 状态(共性壳)。
+"""RunControlPanel · 器件身份 + dry/live + 运行/停止 + 预检/安全 + 状态(共性壳)。
 
 身份字段(device_id/geometry/serial/device_type/operator)**不在协议参数表单里**
 (REGISTRY.params 刻意不含身份,见 registry.py);它们是运行头元数据,放这里,
 worker 会并进 params 交给 run_stage_*/_build_manifest。
 
-安全 UI(初版):dry 默认;切 live 时控制区变淡红 + 必须勾选接线确认 + 手输 stage 码
+安全 UI:dry 默认;切 live 时控制区变淡红 + 必须勾选接线确认 + 手输 stage 码
 (confirm 唯一语义最终由引擎 validate_live_request 兜底:confirm 必须 == stage)。
+预检/安全组:展示接线(Gate/Drain/CH302)+ 本轮 max|Ig|(由 on_shot 喂入)。
 """
 from __future__ import annotations
 
@@ -24,6 +25,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+# 接线默认(只读展示;真实改线/跨机走接线档案)。容错导入。
+try:
+    from fefetlab.protocols.wgfmu_fefet import (
+        DEFAULT_DRAIN_CH as _DRAIN,
+        DEFAULT_GATE_CH as _GATE,
+    )
+except Exception:  # noqa: BLE001
+    _GATE, _DRAIN = 202, 201
+
 # 身份字段 UI 默认(与 wgfmu_fefet.parse_args 默认一致,仅作初值)
 _ID_DEFAULTS = {
     "device_id": "L40W10_01",
@@ -35,13 +45,14 @@ _ID_DEFAULTS = {
 
 
 class RunControlPanel(QWidget):
-    """中栏:身份 + 模式 + 运行控制。"""
+    """中栏:身份 + 模式 + 预检/安全 + 运行控制。"""
 
     runClicked = Signal()
     stopClicked = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._max_ig_uA = 0.0
 
         # ── 器件身份 ──
         id_box = QGroupBox("器件 / 运行身份")
@@ -88,6 +99,20 @@ class RunControlPanel(QWidget):
         live_form.addRow(QLabel("confirm ="), self.ed_confirm)
         self._live_box.setVisible(False)
 
+        # ── 预检 / 安全 ──
+        self._safety_box = QGroupBox("预检 / 安全")
+        sb_form = QFormLayout(self._safety_box)
+        self._pf_errx = QLabel("ERRX 预检:dry 模拟通过")
+        self._pf_chan = QLabel(f"通道:Gate={_GATE} / Drain={_DRAIN}")
+        self._pf_302 = QLabel("CH302:禁用(无 RSU)")
+        for _w in (self._pf_errx, self._pf_chan, self._pf_302):
+            _w.setStyleSheet("color:#2E7D32;")
+        self._safety = QLabel("本轮 max|Ig|: -- µA")
+        sb_form.addRow(self._pf_errx)
+        sb_form.addRow(self._pf_chan)
+        sb_form.addRow(self._pf_302)
+        sb_form.addRow(self._safety)
+
         # ── 运行控制 ──
         self.btn_run = QPushButton("▶ 运行")
         self.btn_stop = QPushButton("■ 停止")
@@ -108,6 +133,7 @@ class RunControlPanel(QWidget):
         lay.addWidget(id_box)
         lay.addWidget(self._mode_box)
         lay.addWidget(self._live_box)
+        lay.addWidget(self._safety_box)
         lay.addLayout(btn_lay)
         lay.addWidget(self.progress)
         lay.addWidget(self.status)
@@ -160,6 +186,21 @@ class RunControlPanel(QWidget):
         self.status.setText(text)
         self.status.setStyleSheet("color:#B80000;" if error else "")
 
+    def reset_safety(self) -> None:
+        """新一轮运行前清空 max|Ig| 指标。"""
+        self._max_ig_uA = 0.0
+        self._safety.setText("本轮 max|Ig|: -- µA")
+        self._safety.setStyleSheet("")
+
+    def update_safety(self, ig_uA: float) -> None:
+        """收到更高的 |Ig|(µA)时更新指标 + 着色(经验:≥20µA 偏高,标红)。"""
+        if ig_uA <= self._max_ig_uA:
+            return
+        self._max_ig_uA = ig_uA
+        self._safety.setText(f"本轮 max|Ig|: {ig_uA:.3g} µA")
+        self._safety.setStyleSheet(
+            "color:#B80000;font-weight:bold;" if ig_uA >= 20 else "color:#2E7D32;")
+
     # ── 内部 ────────────────────────────────────────────────────────────────
     def _browse_out_root(self) -> None:
         from PySide6.QtWidgets import QFileDialog
@@ -171,5 +212,8 @@ class RunControlPanel(QWidget):
     def _on_mode_toggled(self, _checked: bool) -> None:
         live = self.is_live()
         self._live_box.setVisible(live)
+        self._pf_errx.setText("ERRX 预检:live 由引擎执行(不发 *CLS/*RST)" if live
+                              else "ERRX 预检:dry 模拟通过")
+        self._pf_errx.setStyleSheet("color:#B8860B;" if live else "color:#2E7D32;")
         # live 时整条控制区淡红底,提醒
         self.setStyleSheet("RunControlPanel{background:#FFF0F0;}" if live else "")
