@@ -469,12 +469,14 @@ def _build_registry() -> dict[str, ProtocolSpec]:
     # ── 单写族(E1S/E6S/E6M,2026-06-23):脆弱 L10 每 shot 只写一次,纯加法 ──
     from ..protocols.wgfmu_single_shot import run_stage_e1s, run_stage_e6m, run_stage_e6s
     _ss_runners = {"E1S": run_stage_e1s, "E6S": run_stage_e6s, "E6M": run_stage_e6m}
+    _ss_schema = {"E1S": "fefet_fixedcols", "E6S": "fefet_disturb_single",
+                  "E6M": "fefet_disturb_accum"}
     for sid, runner in _ss_runners.items():
         title, physics, group = _META_SS[sid]
         registry[sid] = ProtocolSpec(
             id=sid, title=title, family="WGFMU", physics=physics,
             description=_SS_DESC[sid], params=_SINGLE_SHOT_PARAMS[sid],
-            csv_schema="fefet_fixedcols", group=group, output_label=sid, runner=runner,
+            csv_schema=_ss_schema[sid], group=group, output_label=sid, runner=runner,
         )
     # ── 声明式自定义协议(项目5 M2 DSL,纯加法、family=CUSTOM 隔离,绝不碰 golden)──
     from ..protocols.declared.registry_glue import build_declared_specs

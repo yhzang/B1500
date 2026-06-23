@@ -95,6 +95,94 @@ def plot_fefet_fixedcols(df, plot_widget, *, live: bool, options: dict | None = 
                              symbol="t", symbolSize=5, symbolBrush=None, name=f"{name} Ig")
 
 
+def _reset_legend(plot_widget):
+    lg = getattr(plot_widget.plotItem, "legend", None)
+    if lg is not None:
+        lg.clear()
+    else:
+        plot_widget.addLegend(offset=(10, 10))
+
+
+def _main_vg_subset(df, tonum):
+    """取主读点(Vg 最接近 −1.0)的子集,避免多 Vg 读点在同一 x 上叠点。"""
+    if "Vg_read_V" not in df.columns:
+        return df
+    clean = tonum(df["Vg_read_V"]).dropna()
+    if clean.empty:
+        return df
+    main_vg = clean.iloc[(clean + 1.0).abs().to_numpy().argmin()]
+    return df[(tonum(df["Vg_read_V"]) - main_vg).abs() < 1e-9]
+
+
+@register_plot("fefet_disturb_accum")
+def plot_e6m_accum(df, plot_widget, *, live: bool, options: dict | None = None) -> None:
+    """E6M 累积扰动:主读点 Id_mean_A vs 累积扰动次数 n_disturb,按 state 分线(N 轴宜 log)。"""
+    import pandas as pd
+    import pyqtgraph as pg
+
+    opts = options or {}
+    plot_widget.clear()
+    _reset_legend(plot_widget)
+    plot_widget.showGrid(x=True, y=True, alpha=0.3)
+    plot_widget.setLabel("bottom", "n_disturb")
+    plot_widget.setLabel("left", "I (A)")
+    if df is None or len(df) == 0 or "Id_mean_A" not in df.columns or "n_disturb" not in df.columns:
+        return
+
+    def tonum(s):
+        return pd.to_numeric(s, errors="coerce")
+
+    base = _main_vg_subset(df, tonum)
+    groups = list(base.groupby("state_target")) if "state_target" in base.columns else [("", base)]
+    for i, (state, sub) in enumerate(groups):
+        color = _COLOR.get(str(state), _FALLBACK_COLORS[i % len(_FALLBACK_COLORS)])
+        x = tonum(sub["n_disturb"]).to_numpy()
+        yd = tonum(sub["Id_mean_A"]).to_numpy()
+        order = x.argsort()
+        if opts.get("show_id", True):
+            plot_widget.plot(x[order], yd[order], pen=pg.mkPen(color=color, width=2),
+                             symbol="o", symbolSize=6, symbolBrush=color, name=f"{state} Id@N")
+        if opts.get("show_ig", False) and "Ig_mean_A" in sub.columns:
+            yg = tonum(sub["Ig_mean_A"]).to_numpy()
+            plot_widget.plot(x[order], yg[order], pen=pg.mkPen(color=color, width=1, style=_dash()),
+                             symbol="t", symbolSize=5, name=f"{state} Ig")
+
+
+@register_plot("fefet_disturb_single")
+def plot_e6s_single(df, plot_widget, *, live: bool, options: dict | None = None) -> None:
+    """E6S 单发扰动:扰后(post 相)主读点 Id_mean_A vs 扰后延迟,按 state 分线。"""
+    import pandas as pd
+    import pyqtgraph as pg
+
+    opts = options or {}
+    plot_widget.clear()
+    _reset_legend(plot_widget)
+    plot_widget.showGrid(x=True, y=True, alpha=0.3)
+    plot_widget.setLabel("bottom", "delay_after_disturb_s (s)")
+    plot_widget.setLabel("left", "I (A)")
+    if df is None or len(df) == 0 or "Id_mean_A" not in df.columns:
+        return
+
+    def tonum(s):
+        return pd.to_numeric(s, errors="coerce")
+
+    d = df[df["phase"] == "post"] if "phase" in df.columns else df
+    if "delay_after_disturb_s" not in d.columns or len(d) == 0:
+        return
+    base = _main_vg_subset(d, tonum)
+    groups = list(base.groupby("state_target")) if "state_target" in base.columns else [("", base)]
+    for i, (state, sub) in enumerate(groups):
+        color = _COLOR.get(str(state), _FALLBACK_COLORS[i % len(_FALLBACK_COLORS)])
+        x = tonum(sub["delay_after_disturb_s"]).to_numpy()
+        yd = tonum(sub["Id_mean_A"]).to_numpy()
+        m = ~pd.isna(x)
+        x = x[m]; yd = yd[m]
+        if opts.get("show_id", True) and len(x):
+            order = x.argsort()
+            plot_widget.plot(x[order], yd[order], pen=pg.mkPen(color=color, width=2),
+                             symbol="o", symbolSize=6, symbolBrush=color, name=f"{state} post")
+
+
 def _dash():
     from PySide6.QtCore import Qt
     return Qt.PenStyle.DashLine
