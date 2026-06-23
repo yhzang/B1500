@@ -1,7 +1,7 @@
 # 当前状态
 
-- 更新时间：2026-06-23 CST（claude；GUI 上位机完整化收口 + 全绿 131，06-22 收尾下沉为历史）
-- 当前目标：**项目3 = 测试机本地 PySide6 上位机，已"完整可用"**（dry 全链路 + DC 卡片 + 扩展缝，`pytest tests/` 131 绿，`python -m gui --selftest` exit 0）。设计文档：`_agent/references/B1500_GUI架构设计_PySide6.md` + `..._自定义测试配方与接线档案_设计.md`；扩展指南：`_agent/references/扩展_新增存储器类型指南.md`。
+- 更新时间：2026-06-23 CST（claude；单写 E1S/E6S/E6M 升格进 GUI + 项目4 口径校正，全绿 162）
+- 当前目标：**项目3 = 测试机本地 PySide6 上位机，已"完整可用"且能点跑项目4 真实单写实验**（dry 全链路 + DC + 扩展缝 + **单写 E1S/E6S/E6M 进 REGISTRY，GUI 可驱动**，`pytest tests/` 162 绿，`python -m gui --selftest` exit 0）。设计文档：`_agent/references/B1500_GUI架构设计_PySide6.md` + `..._自定义测试配方与接线档案_设计.md`；扩展指南：`_agent/references/扩展_新增存储器类型指南.md`。
 
 ## 2026-06-23 GUI 上位机"完整化"收口（权威，claude）
 

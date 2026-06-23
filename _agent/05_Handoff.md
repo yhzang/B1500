@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-06-23 (3) → 单写 E1S/E6S/E6M 接进 GUI（实验"点就能跑"）+ 项目4 口径校正（⭐新会话从这接）
+
+**核心**：项目4 真实实验全用**单写协议**（脆弱 L10 每 shot 只写一次），此前只在 `scripts/wgfmu_single_shot_disturb.py`、GUI 点不出。本轮升格进 engine REGISTRY，**GUI 现在能点跑 E1S/E6S/E6M**。
+
+- **搬家（字节不变）**：协议逻辑 `scripts/wgfmu_single_shot_disturb.py` → `src/fefetlab/protocols/wgfmu_single_shot.py`（脚本退化薄壳）；搬家前后归一化 dry CSV 哈希 E1S/E6S/E6M 一致。
+- **注册**：registry 加单写族 ParamSpec（read_vg 双读点 / delays / checkpoints / disturb_amp / interval_s / write_state / rich_read / 各 ig_stop；cli_flag=None，跳过 argparse 比对）+ 进 REGISTRY（family=WGFMU，按"保持/扰动"分组）。
+- **绘图**：E6M=Id vs n_disturb（`fefet_disturb_accum`）、E6S=Id vs 扰后延迟（`fefet_disturb_single`）、E1S=Id vs delay。
+- **测试**：`pytest tests/` **162 passed**；金标准 ALL_DRY 169/640 byte-identical 不破；`--selftest` exit 0。已 push（HEAD 8135d60）。
+- **缺口（未做，非阻塞）**：运行队列/批处理、整套实验预设 v2、器件死亡台账、GUI rest-s 静置门、换器件必补 S1 护栏、复跑载参数——让"一清单连跑"更顺，但单条实验已能"选协议→填参数→跑"。**live 真机待现场验证**（WGFMU live 代码就绪；DC live=NotImplementedError）。
+
+**⚠️ 项目4 口径校正（同日，跨项目）**：开题报告"第三次"（2026-06-12 定题「面向铪基 FeFET 阵列的**读写干扰**表征及建模」）把 **"读出投影"→"读出干扰"（read disturb）**、读出层、−1V/−0.5V-first、温度=后续判别维度（非主线）。已更项目4 `_agent`。**写对外文本/与椰椰讨论物理用"读出干扰"，不用"读出投影"。**
+
+---
+
 ## 2026-06-23 (2) → 需求vs现状深审 + 可视化/参数/预设大改 + 全绿 150(⭐新会话从这接)
 
 **椰椰反馈**:GUI 还简陋;重分析项目4 测量需求 vs 现状(参数/导出/log/bug/真实下发),并参考本机 EasyEXPERT。
