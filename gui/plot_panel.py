@@ -1,17 +1,18 @@
-"""PlotPanel · 编程波形预览 + 结果图(可视化进阶) + 逐炮实时增量图(共性壳)。
+"""PlotPanel · 编程波形预览 + 结果图(可视化进阶) + 数据表 + 逐炮实时增量图(共性壳)。
 
-三种绘制:
+三种绘制 + 一个表:
   * 编程波形(show_waveform):dry 跑完从 AuditBackend._patterns 取出的 gate/drain 电压意图。
-  * 逐炮实时(begin_live_plot / append_shot_rows):每炮 on_shot 增量追加进结果图(环形缓冲 +
-    30fps QTimer 限频 + >4000 点降采样)。仅 fefet_fixedcols 有实时映射。
+  * 逐炮实时(begin_live_plot / append_shot_rows):每炮 on_shot 增量追加(环形缓冲 + 30fps 限频)。
   * 结果图(show_result):跑完按 csv_schema 查 plot_dispatch 从落盘 CSV 重读重画(权威终图)。
+  * 数据表(List 视图,类 EasyEXPERT):结果 CSV 的表格,不依赖 pyqtgraph 也能看。
 
-增量5 可视化进阶(结果图工具条):log X/Y 轴、Id/Ig 通道显隐、Id_std 误差棒、自动缩放、
-十字游标读坐标。数据级开关(Id/Ig/误差棒)经 options 传给适配器;轴级(log/缩放/游标)由本壳
-在 plot 之后统一施加。结果 df 缓存,改开关即重画,不重读 CSV。
+可视化工具条:
+  * **log/线性**:X/Y 轴各自切;**按 schema 智能设默认**(fefet 的 delay 轴默认 log-X;DC 的 |Id| 默认 log-Y)。
+  * **导出**:保存图片(PNG/SVG)+ 导出当前结果 CSV(回流项目4 用)。
+  * Id/Ig 显隐、Id_std 误差棒、自动缩放、十字游标读坐标。结果 df 缓存,改开关即重画,不重读 CSV。
 
 dry-run 横幅:实时/结果图标题强制标注 "DRY 占位电流(非器件数据)"。
-pyqtgraph 缺失时整体降级为提示文字(本机不装、测试机才装)。
+pyqtgraph 缺失时图降级为提示文字,但数据表仍可用(本机不装、测试机才装)。
 """
 from __future__ import annotations
 
@@ -21,9 +22,12 @@ from pathlib import Path
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
+    QFileDialog,
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
     QWidget,
@@ -42,6 +46,7 @@ _LIVE_COLOR = {"ERS": "#2659AD", "PGM": "#B80000"}
 _LIVE_FALLBACK = ["#1A801A", "#8000A0", "#A06000", "#0080A0"]
 _LIVE_SCHEMAS = {"fefet_fixedcols"}
 _MAX_LIVE_POINTS = 4000
+_MAX_TABLE_ROWS = 2000
 
 
 class PlotPanel(QWidget):
@@ -64,11 +69,17 @@ class PlotPanel(QWidget):
         self._cursor_lines: tuple | None = None
         self._cursor_label = None
 
+        # 数据表(List 视图)—— 不依赖 pyqtgraph
+        self._table = QTableWidget()
+        self._table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
         if not HAVE_PG:
             self._wave = None
             self._result = None
+            self._export_status = None
             self.tabs.addTab(_missing_label(), "编程波形")
             self.tabs.addTab(_missing_label(), "结果图")
+            self.tabs.addTab(self._table, "数据表")
             return
 
         self._wave = pg.PlotWidget()
@@ -80,12 +91,13 @@ class PlotPanel(QWidget):
         self._result.showGrid(x=True, y=True, alpha=0.3)
         self.tabs.addTab(self._wave, "编程波形")
         self.tabs.addTab(self._build_result_tab(), "结果图")
+        self.tabs.addTab(self._table, "数据表")
 
         self._live_timer = QTimer(self)
         self._live_timer.setInterval(33)
         self._live_timer.timeout.connect(self._flush_live)
 
-    # ── 结果图工具条(增量5) ───────────────────────────────────────────────────
+    # ── 结果图工具条(log/线性 + 导出 + 通道/误差棒/游标) ──────────────────────
     def _build_result_tab(self) -> QWidget:
         bar = QHBoxLayout()
         self._cb_logx = QCheckBox("log X")
@@ -95,10 +107,14 @@ class PlotPanel(QWidget):
         self._cb_err = QCheckBox("误差棒")
         self._cb_cursor = QCheckBox("十字游标")
         self._btn_auto = QPushButton("自动缩放")
+        self._btn_png = QPushButton("保存图片")
+        self._btn_csv = QPushButton("导出CSV")
         for w in (self._cb_logx, self._cb_logy, self._cb_id, self._cb_ig, self._cb_err, self._cb_cursor):
             bar.addWidget(w)
         bar.addWidget(self._btn_auto)
         bar.addStretch(1)
+        bar.addWidget(self._btn_png)
+        bar.addWidget(self._btn_csv)
         self._cb_logx.toggled.connect(self._apply_axes)
         self._cb_logy.toggled.connect(self._apply_axes)
         self._cb_id.toggled.connect(self._replot_result)
@@ -106,12 +122,18 @@ class PlotPanel(QWidget):
         self._cb_err.toggled.connect(self._replot_result)
         self._cb_cursor.toggled.connect(self._toggle_cursor)
         self._btn_auto.clicked.connect(lambda: self._result.enableAutoRange())
+        self._btn_png.clicked.connect(self._export_image)
+        self._btn_csv.clicked.connect(self._export_csv)
+
+        self._export_status = QLabel("")
+        self._export_status.setStyleSheet("color:#2E7D32;")
 
         box = QWidget()
         v = QVBoxLayout(box)
         v.setContentsMargins(2, 2, 2, 2)
         v.addLayout(bar)
         v.addWidget(self._result)
+        v.addWidget(self._export_status)
         return box
 
     def _viz_options(self) -> dict:
@@ -122,6 +144,83 @@ class PlotPanel(QWidget):
     def _apply_axes(self) -> None:
         if self._result is not None:
             self._result.setLogMode(x=self._cb_logx.isChecked(), y=self._cb_logy.isChecked())
+
+    def _apply_default_axes(self, schema: str, df) -> None:
+        """按 schema/数据智能设默认轴:fefet 的 delay 轴默认 log-X;DC 的 |Id| 默认 log-Y。
+
+        用户随时可勾掉。设默认时屏蔽信号,避免 _draw_result 前重复施加。
+        """
+        logx, logy = False, False
+        try:
+            if schema == "fefet_fixedcols" and "delay_s" in getattr(df, "columns", []):
+                import pandas as pd
+
+                xs = pd.to_numeric(df["delay_s"], errors="coerce").dropna()
+                pos = xs[xs > 0]
+                if len(pos) > 1 and (pos.max() / max(pos.min(), 1e-30)) >= 100:
+                    logx = True   # delay 跨 ≥2 个数量级 → log 更可读
+            elif schema == "dc":
+                logy = True       # |Id| vs Vg,电流跨多个数量级
+        except Exception:  # noqa: BLE001
+            pass
+        for cb, val in ((self._cb_logx, logx), (self._cb_logy, logy)):
+            cb.blockSignals(True)
+            cb.setChecked(val)
+            cb.blockSignals(False)
+
+    def _set_export_status(self, msg: str, *, error: bool = False) -> None:
+        if self._export_status is not None:
+            self._export_status.setText(msg)
+            self._export_status.setStyleSheet("color:#B80000;" if error else "color:#2E7D32;")
+
+    # ── 导出(可单测:save_* 不弹对话框) ──────────────────────────────────────
+    def _export_image(self) -> None:
+        if self._result is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "保存结果图", "", "PNG 图片 (*.png);;SVG 矢量图 (*.svg)")
+        if path:
+            self.save_result_image(path)
+
+    def save_result_image(self, path: str) -> bool:
+        """把当前结果图导出为 PNG/SVG(按后缀)。返回是否成功。"""
+        if self._result is None:
+            self._set_export_status("无图可保存", error=True)
+            return False
+        try:
+            import pyqtgraph.exporters as pe
+
+            if str(path).lower().endswith(".svg"):
+                ex = pe.SVGExporter(self._result.plotItem)
+            else:
+                ex = pe.ImageExporter(self._result.plotItem)
+            ex.export(str(path))
+            self._set_export_status(f"已保存图片:{path}")
+            return True
+        except Exception as exc:  # noqa: BLE001
+            self._set_export_status(f"保存图片失败:{exc}", error=True)
+            return False
+
+    def _export_csv(self) -> None:
+        if self._last_result is None:
+            self._set_export_status("无结果可导出", error=True)
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "导出数据 CSV(回流项目4)", "", "CSV (*.csv)")
+        if path:
+            self.save_result_csv(path)
+
+    def save_result_csv(self, path: str) -> bool:
+        """把当前结果 df 另存为 CSV(UTF-8 无 BOM,供回流项目4)。返回是否成功。"""
+        if self._last_result is None:
+            self._set_export_status("无结果可导出", error=True)
+            return False
+        try:
+            df = self._last_result[0]
+            df.to_csv(str(path), index=False, encoding="utf-8")
+            self._set_export_status(f"已导出 CSV:{path}")
+            return True
+        except Exception as exc:  # noqa: BLE001
+            self._set_export_status(f"导出失败:{exc}", error=True)
+            return False
 
     def _toggle_cursor(self, on: bool) -> None:
         if self._result is None:
@@ -201,6 +300,8 @@ class PlotPanel(QWidget):
         self._result.setLabel("left", "Id_mean_A")
         banner = "" if live else "  [DRY 占位电流 · 非器件数据]"
         self._result.setTitle(f"实时(逐炮){banner}")
+        # 实时也给 delay 轴默认 log-X(retention 跨数量级)
+        self._cb_logx.blockSignals(True); self._cb_logx.setChecked(True); self._cb_logx.blockSignals(False)
         self.tabs.setCurrentIndex(1)
         self._apply_axes()
         if self._live_timer is not None:
@@ -236,29 +337,44 @@ class PlotPanel(QWidget):
             xs, ys = _sorted_downsampled(bx, by)
             item.setData(xs, ys)
 
-    # ── 结果图(权威终图;停实时计时器) ───────────────────────────────────────
+    # ── 结果图(权威终图;停实时计时器)+ 数据表 ──────────────────────────────
     def show_result(self, csv_path, schema: str, *, live: bool) -> None:
+        try:
+            import pandas as pd
+        except Exception:  # noqa: BLE001
+            return
+        p = Path(csv_path)
+        if not p.exists():
+            if self._result is not None:
+                self._result.clear(); self._result.setTitle(f"找不到结果 CSV: {p}")
+            return
+        try:
+            df = pd.read_csv(p)
+        except Exception as exc:  # noqa: BLE001
+            if self._result is not None:
+                self._result.clear(); self._result.setTitle(f"读 CSV 失败: {exc}")
+            return
+        self._last_result = (df, schema, live)
+        self._fill_table(df)               # 数据表(不依赖 pyqtgraph)
         if not HAVE_PG or self._result is None:
             return
         if self._live_timer is not None:
             self._live_timer.stop()
         self._live_active = False
-        try:
-            import pandas as pd
-        except Exception:  # noqa: BLE001
-            self._result.clear(); self._result.setTitle("pandas 未安装,无法读 CSV")
-            return
-        p = Path(csv_path)
-        if not p.exists():
-            self._result.clear(); self._result.setTitle(f"找不到结果 CSV: {p}")
-            return
-        try:
-            df = pd.read_csv(p)
-        except Exception as exc:  # noqa: BLE001
-            self._result.clear(); self._result.setTitle(f"读 CSV 失败: {exc}")
-            return
-        self._last_result = (df, schema, live)
+        self._apply_default_axes(schema, df)   # 智能默认 log 轴
         self._draw_result(title=p.name)
+
+    def _fill_table(self, df) -> None:
+        cols = list(df.columns)
+        n = min(len(df), _MAX_TABLE_ROWS)
+        self._table.clear()
+        self._table.setColumnCount(len(cols))
+        self._table.setRowCount(n)
+        self._table.setHorizontalHeaderLabels([str(c) for c in cols])
+        for r in range(n):
+            for c, col in enumerate(cols):
+                self._table.setItem(r, c, QTableWidgetItem(str(df.iat[r, c])))
+        self._table.resizeColumnsToContents()
 
     def _replot_result(self) -> None:
         """改可视化开关时,用缓存 df 重画(不重读 CSV)。"""

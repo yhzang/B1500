@@ -1,24 +1,28 @@
 """ParamForm · 按 ProtocolSpec.params 自动生成参数表单(共性壳,与存储器无关)。
 
-设计 §5.4。一个通用渲染器,不为任何协议手写表单——遍历 `spec.params`,按
-`ParamSpec.kind`/`widget`/`visibility` 生成 typed 控件,`collect()` 产出可直接并进
-RunRequest.params 的 dict(SI 口径,与 CLI argparse 默认同单位)。
+设计 §5.4。通用渲染器,遍历 `spec.params`,按 `ParamSpec.kind`/`widget`/`visibility`
+生成 typed 控件,`collect()` 产出可直接并进 RunRequest.params 的 dict(SI 口径)。
 
-增量2(2026-06-22)起:按 widget/kind 渲染 typed 控件,而非清一色 QLineEdit。
+控件映射:
   * INT(有具体默认)            → QSpinBox(套 minimum/maximum;reps 下限1)
-  * FLOAT(有具体默认)          → QDoubleSpinBox(+ 单位后缀;时间单位 µs/ns/ms 做 SI 缩放)
+  * FLOAT(有具体默认)          → QDoubleSpinBox(单位后缀;时间单位 µs/ns/ms 做 SI 缩放;
+                                  **小数位/步长按数值量级自适应**,避免极小值被 6 位小数静默清零;
+                                  **电压单位无显式上下限时夹到 ±10V**,防误填 50V 烧器件)
   * CHOICE / 带 choices 的 COMBO → QComboBox
   * BOOL                         → QCheckBox
-  * FLOAT_LIST / INT_LIST        → QLineEdit(逗号分隔,带格式校验 + 非法红框)
-  * LOCKED(接线/铁律)          → 只读显示,collect 原样返默认(不可改)
-  * 默认 None 的数值(=用协议标称)→ 仍保留可空 QLineEdit,空 → None(runner 回退标称)
+  * FLOAT_LIST / INT_LIST        → QLineEdit(逗号分隔,带格式校验 + 非法红框;
+                                  **整数列表(检查点)拒空、拒非正**,与 runner 解析口径对齐)
+  * LOCKED(接线/铁律)          → 只读显示,collect 原样返默认
+  * 默认 None 的数值(=用协议标称)→ 可空 QLineEdit,空 → None(runner 回退标称)
 
-**SI 缩放只对时间单位 µs/ns/ms**(它们的默认值以「秒」存,显示成工程量):collect 时乘回因子
-还原秒。`µA/nA` 不缩放——本仓库 `*_uA` 参数的默认值本就以 µA 存(runner 内部再 ×1e-6),
-缩放会双重换算。`s/V/A/Hz` 不缩放。
+SI 缩放只对时间单位 µs/ns/ms(默认值以「秒」存):collect 时乘回因子还原秒。
+`µA/nA` 不缩放——本仓库 `*_uA` 默认值本就以 µA 存。`s/V/A/Hz` 不缩放。
+
+collect():任一字段格式非法(红框)直接抛 ValueError,调用方(app)捕获并提示,绝不带病下发。
 """
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from PySide6.QtCore import Signal
@@ -37,19 +41,35 @@ from PySide6.QtWidgets import (
 
 from fefetlab.engine.specs import ParamKind, ParamSpec, ProtocolSpec, Visibility, Widget
 
-# 仅时间单位做 SI 工程量缩放(默认值以秒存):显示工程量、collect 乘回因子还原秒。
-# µA/nA 不在此——本仓库 *_uA 默认值本就以 µA 存(runner 再 ×1e-6),缩放会双重换算。
+# 仅时间单位做 SI 工程量缩放(默认值以秒存)。µA/nA 不在此(默认本就以 µA 存)。
 _SI_FACTOR = {"µs": 1e-6, "μs": 1e-6, "us": 1e-6, "ns": 1e-9, "ms": 1e-3}
 _INVALID_QSS = "border: 1px solid #B80000; background: #FFF0F0;"
 _LIST_KINDS = (ParamKind.FLOAT_LIST, ParamKind.INT_LIST)
+# 电压安全夹值(WGFMU 仪器极限 ±10V;无显式上下限的电压参数夹到此,防误填)。
+_VOLT_CLAMP_V = 10.0
 
 
 def _si_factor(unit: str) -> float:
     return _SI_FACTOR.get(unit or "", 1.0)
 
 
+def _is_volt(unit: str) -> bool:
+    return (unit or "").strip() == "V"
+
+
 def _default_str(p: ParamSpec) -> str:
     return "" if p.default is None else str(p.default)
+
+
+def _adaptive_decimals_step(disp: float) -> tuple[int, float]:
+    """按显示量级给 QDoubleSpinBox 的小数位与步长,避免极小值被 6 位小数清零。"""
+    d = abs(disp)
+    if d <= 0 or not math.isfinite(d):
+        return 6, 0.1
+    exp = math.floor(math.log10(d))
+    decimals = max(3, min(12, 3 - exp))   # 在数值下方约 3 位有效
+    step = 10.0 ** (exp - 1)
+    return decimals, step
 
 
 class ParamForm(QWidget):
@@ -118,14 +138,16 @@ class ParamForm(QWidget):
         self.validityChanged.emit(self.is_valid())
 
     def collect(self) -> dict[str, Any]:
-        """取当前所有字段值(SI 口径)。文本字段解析失败抛 ValueError(调用方捕获并提示)。"""
+        """取当前所有字段值(SI 口径)。任一字段格式非法 → 抛 ValueError(调用方捕获并提示)。"""
+        if self._invalid:
+            raise ValueError("参数格式非法:" + ", ".join(sorted(self._invalid)))
         out: dict[str, Any] = {}
         for p, w in self._fields:
             out[p.name] = self._read_widget(p, w)
         return out
 
     def is_valid(self) -> bool:
-        """所有自由文本字段格式合法(空=用默认,算合法)。typed 控件天然合法。"""
+        """所有自由文本字段格式合法(空=用默认,算合法;但整数列表空算非法)。"""
         return not self._invalid
 
     # ── 控件构造 ──────────────────────────────────────────────────────────────
@@ -161,13 +183,20 @@ class ParamForm(QWidget):
             if p.default is None:
                 return self._nullable_lineedit(p)
             f = _si_factor(p.unit)
+            disp = float(p.default) / f
             dsb = QDoubleSpinBox()
-            dsb.setDecimals(6)
-            dsb.setSingleStep(0.1)
-            lo = (p.minimum / f) if p.minimum is not None else -1e12
-            hi = (p.maximum / f) if p.maximum is not None else 1e12
-            dsb.setRange(lo, hi)
-            dsb.setValue(float(p.default) / f)
+            decimals, step = _adaptive_decimals_step(disp)
+            dsb.setDecimals(decimals)
+            dsb.setSingleStep(step)
+            lo = (p.minimum / f) if p.minimum is not None else None
+            hi = (p.maximum / f) if p.maximum is not None else None
+            # 电压参数无显式上下限 → 夹到 ±10V(仪器极限),防误填 50V 烧器件
+            if _is_volt(p.unit):
+                vlim = _VOLT_CLAMP_V / f
+                lo = -vlim if lo is None else lo
+                hi = vlim if hi is None else hi
+            dsb.setRange(-1e12 if lo is None else lo, 1e12 if hi is None else hi)
+            dsb.setValue(disp)
             if p.unit:
                 dsb.setSuffix(f" {p.unit}")
             dsb.setProperty("si_factor", f)
@@ -210,7 +239,7 @@ class ParamForm(QWidget):
         # QLineEdit:列表返原始字符串(runner 自解析);数值空→默认(None),否则解析
         text = w.text().strip()
         if p.kind in _LIST_KINDS:
-            self._check_list(p, text)  # 非法抛 ValueError
+            self._check_list(p, text)  # 非法/空整数列表抛 ValueError
             return text
         if text == "":
             return p.default
@@ -227,27 +256,35 @@ class ParamForm(QWidget):
 
     def _field_ok(self, p: ParamSpec, text: str) -> bool:
         if text == "":
-            return True  # 空 = 用默认/标称,合法
+            # 整数列表(检查点)不许空;其余空 = 用默认/标称,合法
+            return p.kind is not ParamKind.INT_LIST
         try:
             if p.kind in _LIST_KINDS:
                 self._check_list(p, text)
             elif p.kind is ParamKind.INT:
                 int(text)
             else:
-                float(text)
+                val = float(text)
+                if _is_volt(p.unit) and abs(val) > _VOLT_CLAMP_V:
+                    return False  # 电压超 ±10V 视为非法,防误填
             return True
         except ValueError:
             return False
 
     @staticmethod
     def _check_list(p: ParamSpec, text: str) -> None:
-        if text == "":
-            return
-        cast = int if p.kind is ParamKind.INT_LIST else float
-        for part in text.split(","):
-            part = part.strip()
-            if part:
-                cast(part)  # 非法 → ValueError
+        """校验逗号列表;**整数列表(检查点)拒空、拒非正**,与 runner 解析口径对齐。"""
+        is_int = p.kind is ParamKind.INT_LIST
+        parts = [s.strip() for s in text.split(",") if s.strip()]
+        if not parts:
+            if is_int:
+                raise ValueError("整数列表(检查点)不能为空")
+            return  # 浮点列表允许空(runner 回退默认)
+        cast = int if is_int else float
+        for part in parts:
+            v = cast(part)            # 非法 → ValueError
+            if is_int and v <= 0:
+                raise ValueError(f"检查点必须为正整数:{part}")
 
     # ── 杂项 ──────────────────────────────────────────────────────────────────
     def _label_text(self, p: ParamSpec) -> str:

@@ -209,6 +209,15 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "live 未就绪",
                                 "live 模式需勾选接线确认,并在 confirm 框手输当前 stage 码。")
             return
+        if live:
+            from fefetlab.engine import REGISTRY
+
+            _spec = REGISTRY.get(stage)
+            if _spec is not None and _spec.family == "SMU":
+                QMessageBox.warning(self, "DC live 未实现",
+                                    "DC/SMU 协议的 live 真机后端尚未接入(目前仅 dry 可用)。\n"
+                                    "请切回 dry-run,或改用 WGFMU 协议做 live。")
+                return
         try:
             params = self.protocol_panel.collect_params()
         except ValueError as exc:
