@@ -24,7 +24,7 @@
 
 **⚠️ 仓库在被并行开发**:co-dev 提了 `d23dee0`(friendly names + group by"测什么")+ `1d00615`(no-code DSL Project5 M2);`ProtocolSpec.group` 已存在,我的代码/测试已兼容。**改 engine 共享文件(registry/wgfmu_fefet)前先 re-read 防冲突;本轮我只动 gui/。**
 
-**剩余建议(未做)**:① randomize_delays 提升为可见 ADVANCED 开关(需动 registry+wgfmu_fefet,与 co-dev 协调);② R9 长延迟秒-分钟级自动定时+触发(项目4 02_Plan 点过);③ DC live 真机后端;④ 主结果图多 run 叠加。
+**R9 自动定时序列已做**(`gui/scheduler.py` DelaySchedule 纯逻辑 + SchedulePanel + app.py「自动定时序列」dock):写后秒-分钟级 delay 自动倒计时 + 到点触发当前协议,记 requested vs actual,免手动掐表(153 passed)。**剩余建议(未做)**:① randomize_delays 提升为可见 ADVANCED 开关(需动 registry+wgfmu_fefet,与 co-dev 协调);② DC live 真机后端(需接 SMU);③ 主结果图多 run 叠加(目前仅 RunBrowser)。
 
 **椰椰待办**:测试机桌面双击 `run_gui.bat` 看界面;`git push`。
 
