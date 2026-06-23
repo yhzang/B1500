@@ -1,6 +1,16 @@
 
 ---
 
+## 2026-06-04 CST git/同步状态核实（claude，非上机）
+- Goal：应椰椰要求核对项目3 提交/同步是否到位（State 停在 05-26，与项目4 已跑 E6 对不上）。
+- Evidence：
+  - 分析机 `main` 与 `origin/main` 0/0（完全同步），HEAD `5a9347d`；提交到今天，E6S/E1S/E6M 脚本(`a64e9eb`)+今天 3 个脆弱-L10 修复均在远端。
+  - `B1500_VISA_ADDR` override 在 `wgfmu_next_round_minimal.py`（grep 命中）→ 05-26 "下一步 commit/push" 已完成（并入通用 sync commit，故按 message 搜不到）。
+  - 本机脚本 SHA256：`wgfmu_single_shot_disturb.py`=4BD430A0…C388、`wgfmu_next_round_minimal.py`=4BDE4595…94F0。
+  - 测试机 `100.108.189.9` SSH 不可达（TCP 通但 banner 超时，疑关机/休眠），未能取远端哈希。
+- 更正：项目3 `01_State` 删除"真机 git pull 同步"错误下一步（测试机 git 已岔开，须 scp 不能 pull）。
+- Current recommendation：下次上机前先按 `_agent/runbooks/git-sync-and-test-machine.md` scp 今天 3 处脚本改动到测试机并 SHA256 双向核对；那份 runbook 今日新建尚未提交，建议提交（待椰椰确认）。
+
 ## 2026-05-22 22:20 CST L10W10_02 fresh 复测 + pause/recovery 完成
 - Goal：按 L10W10_01 的最小包复测 L10W10_02 fresh 点：S1 → E1 full-delay wide-Vg 3 reps → 20-cycle → pause recovery。
 - Evidence：

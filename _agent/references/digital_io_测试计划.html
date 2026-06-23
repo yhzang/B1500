@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<!-- B1500 Digital I/O 自制板控制 · 测试计划
+     视觉语言沿用能力池 kami(parchment / ink-blue / serif)，做成单文件屏幕版工作文档。
+     来源：b1500 program guide/9018-01851.pdf (Programming Guide Ed.15) ch.2-71~2-87 + 命令参考。
+     建档：2026-06-10 claude。-->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B1500 Digital I/O 自制板控制 · 测试计划</title>
+<meta name="author" content="yhzang">
+<meta name="description" content="B1500 后面板 Digital I/O(DB-25, 16路TTL)自制板控制的测试计划：接线、命令、测试代码、板子架构。">
+<meta name="keywords" content="B1500, Digital I/O, DB-25, ERMOD, ERC, 继电器选择器, FeFET">
+<meta name="generator" content="Kami">
+<style>
+  @font-face{
+    font-family:"TsangerJinKai02";
+    src:url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W04.ttf") format("truetype");
+    font-weight:400; font-style:normal; font-display:swap;
+  }
+  @font-face{
+    font-family:"TsangerJinKai02";
+    src:url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W05.ttf") format("truetype");
+    font-weight:500; font-style:normal; font-display:swap;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  :root{
+    --parchment:#f5f4ed; --ivory:#faf9f5; --near-black:#141413; --dark-warm:#3d3d3a;
+    --olive:#504e49; --stone:#6b6a64; --brand:#1B365D; --border:#e8e6dc;
+    --border-soft:#e5e3d8; --tag-bg:#E4ECF5; --danger:#9a3b2e; --code-bg:#23252b; --code-fg:#e8e6dc;
+    --serif:"TsangerJinKai02","Source Han Serif SC","Noto Serif CJK SC","Songti SC","STSong",Georgia,serif;
+    --mono:"JetBrains Mono","SF Mono",Consolas,"TsangerJinKai02","Noto Serif CJK SC",monospace;
+  }
+  html,body{background:var(--parchment);}
+  body{
+    color:var(--near-black); font-family:var(--serif); font-size:16px; line-height:1.62;
+    letter-spacing:.2px; max-width:880px; margin:0 auto; padding:40px 28px 90px;
+  }
+  /* ---- header ---- */
+  .eyebrow{font-size:12.5px;color:var(--brand);letter-spacing:2px;text-transform:uppercase;margin-bottom:12px;}
+  h1.title{font-size:32px;font-weight:500;line-height:1.18;margin-bottom:12px;}
+  .sub{font-size:16.5px;color:var(--olive);line-height:1.5;margin-bottom:18px;}
+  .meta{font-size:13px;color:var(--stone);line-height:1.7;border-top:1px solid var(--border);
+        border-bottom:1px solid var(--border);padding:12px 0;margin-bottom:8px;}
+  .meta strong{color:var(--dark-warm);font-weight:500;}
+  /* ---- toc ---- */
+  nav.toc{background:var(--ivory);border:1px solid var(--border);border-radius:6px;padding:16px 20px;margin:24px 0 8px;}
+  nav.toc h4{font-size:12px;letter-spacing:1.5px;text-transform:uppercase;color:var(--stone);margin-bottom:10px;font-weight:500;}
+  nav.toc ol{list-style:none;counter-reset:t;columns:2;column-gap:32px;}
+  nav.toc li{counter-increment:t;padding:3px 0;font-size:14.5px;break-inside:avoid;}
+  nav.toc li::before{content:counter(t,decimal-leading-zero);color:var(--brand);font-family:var(--mono);
+                     font-size:11px;margin-right:8px;}
+  nav.toc a{color:var(--dark-warm);text-decoration:none;}
+  nav.toc a:hover{color:var(--brand);text-decoration:underline;}
+  /* ---- headings ---- */
+  h2{font-size:21px;font-weight:500;margin:42px 0 14px;padding-left:10px;border-left:3px solid var(--brand);
+     border-radius:1px;scroll-margin-top:16px;}
+  h2 .n{font-family:var(--mono);font-size:14px;color:var(--brand);margin-right:8px;}
+  h3{font-size:16.5px;font-weight:500;color:var(--dark-warm);margin:22px 0 8px;}
+  p{margin:9px 0;}
+  ul,ol{margin:9px 0 9px 22px;} li{margin:4px 0;}
+  strong{font-weight:500;color:var(--near-black);}
+  .lead{font-size:17px;color:var(--olive);}
+  a.ref{color:var(--brand);text-decoration:none;border-bottom:1px dotted var(--brand);}
+  /* ---- code ---- */
+  code{font-family:var(--mono);font-size:13.5px;background:#ecebe2;padding:1.5px 5px;border-radius:3px;color:#5a3d2b;white-space:nowrap;}
+  pre{font-family:var(--mono);font-size:13px;line-height:1.6;background:var(--code-bg);color:var(--code-fg);
+      border-radius:6px;padding:16px 18px;margin:14px 0;overflow-x:auto;border-left:3px solid var(--brand);}
+  pre code{background:transparent;padding:0;color:inherit;white-space:pre;font-size:inherit;}
+  pre .c{color:#8a8f7a;} pre .k{color:#9ec5ff;} pre .s{color:#c8e6a0;} pre .o{color:#e0a87a;}
+  /* ---- tables ---- */
+  table{width:100%;border-collapse:collapse;font-size:14px;margin:14px 0;}
+  th{text-align:left;font-weight:500;color:var(--dark-warm);padding:7px 9px;border-bottom:1.5px solid var(--border);}
+  td{padding:6px 9px;border-bottom:1px solid var(--border-soft);vertical-align:top;}
+  tbody tr:nth-child(even) td{background:var(--ivory);}
+  td code,th code{white-space:nowrap;}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums;}
+  /* ---- pin grid ---- */
+  .pinwrap{display:grid;grid-template-columns:1fr 1fr;gap:0 18px;margin:14px 0;}
+  .pinwrap table{margin:0;font-size:13px;}
+  .dio{color:var(--brand);font-weight:500;}
+  .nu{color:var(--stone);}
+  .gnd{color:var(--danger);font-weight:500;}
+  /* ---- callouts ---- */
+  .callout{background:var(--ivory);border-left:3px solid var(--brand);padding:13px 16px;border-radius:4px;margin:16px 0;}
+  .callout.warn{border-left-color:var(--danger);background:#faf3f0;}
+  .callout.ok{border-left-color:#4a7c4e;background:#f3f7f1;}
+  .callout .lbl{font-size:12px;letter-spacing:1px;text-transform:uppercase;font-weight:500;margin-bottom:5px;display:block;}
+  .callout.warn .lbl{color:var(--danger);} .callout .lbl{color:var(--brand);} .callout.ok .lbl{color:#4a7c4e;}
+  /* ---- collapsible 详查 ---- */
+  table.cmdsum td:first-child{white-space:nowrap;}
+  details{background:var(--ivory);border:1px solid var(--border);border-radius:7px;margin:9px 0;overflow:hidden;}
+  details[open]{border-color:var(--brand);}
+  summary{cursor:pointer;padding:11px 15px;font-size:14.5px;list-style:none;}
+  summary::-webkit-details-marker{display:none;}
+  summary::before{content:"▸ ";color:var(--brand);font-size:12px;}
+  details[open] summary::before{content:"▾ ";}
+  summary code{white-space:nowrap;}
+  .dbody{padding:4px 16px 14px;border-top:1px solid var(--border);}
+  .dbody table{margin:10px 0;font-size:13.5px;}
+  .dbody th{width:96px;color:var(--brand);font-weight:500;vertical-align:top;white-space:nowrap;}
+  .dbody td{vertical-align:top;}
+  .dbody p.src{font-size:11.5px;color:var(--stone);margin-top:8px;}
+  .dbody pre{margin:10px 0;}
+  .dbody a{color:var(--brand);}
+  .dbody .grp{font-weight:500;color:var(--dark-warm);margin:13px 0 3px;font-size:13.5px;}
+  .pdflinks a{color:var(--brand);text-decoration:none;border-bottom:1px dotted var(--brand);line-height:2.1;white-space:nowrap;}
+  .pdflinks small{color:var(--stone);}
+  /* ---- cards ---- */
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0;}
+  .card{background:var(--ivory);border:1px solid var(--border);border-radius:6px;padding:12px 14px;}
+  .card .h{font-size:11.5px;letter-spacing:1px;text-transform:uppercase;color:var(--stone);margin-bottom:6px;}
+  .card .v{font-size:15px;font-weight:500;color:var(--near-black);line-height:1.35;}
+  .card .v small{font-weight:400;color:var(--olive);font-size:12.5px;}
+  /* ---- step ---- */
+  .step{display:flex;gap:14px;margin:12px 0;}
+  .step .num{flex:none;width:26px;height:26px;border-radius:50%;background:var(--brand);color:#fff;
+             font-family:var(--mono);font-size:13px;display:flex;align-items:center;justify-content:center;margin-top:2px;}
+  .step .body{flex:1;}
+  .pill{display:inline-block;background:var(--tag-bg);color:var(--brand);font-size:12px;
+        padding:1px 8px;border-radius:10px;margin-left:6px;font-family:var(--mono);}
+  hr{border:none;border-top:1px solid var(--border);margin:34px 0;}
+  footer{margin-top:40px;padding-top:16px;border-top:1px solid var(--border);font-size:12.5px;color:var(--stone);line-height:1.7;}
+  @media(max-width:680px){.cards{grid-template-columns:repeat(2,1fr);}nav.toc ol{columns:1;}.pinwrap{grid-template-columns:1fr;}}
+</style>
+</head>
+<body>
+
+<div class="eyebrow">B1500 · 项目3 自动化</div>
+<h1 class="title">Digital I/O 口 · 自制板控制测试计划</h1>
+<p class="sub">用后面板那个 D-Sub 25 针口的 16 路 TTL，控制一块自制选择器板，把 SMU / WGFMU 路由到器件。本文是从"先验 16 根线能不能控"到"上板"的完整执行单。</p>
+<div class="meta">
+  <strong>来源</strong>：<code>b1500 program guide/9018-01851.pdf</code> · Keysight B1500 Series Programming Guide, Edition 15 · 章节 2-71~2-87 + 命令参考 ERMOD/ERM/ERC/ERS?/TGP/OSX/PAX<br>
+  <strong>建档</strong>：2026-06-10（claude）　|　<strong>配套</strong>：<code>_agent/references/digital_io_port_自制板控制_档案.md</code>　|　<strong>状态</strong>：⏸ 等买 DB25 公头端子板后上机
+</div>
+
+<nav class="toc">
+  <h4>目录</h4>
+  <ol>
+    <li><a href="#fact">关键事实速览</a></li>
+    <li><a href="#clarify">概念澄清（重要）</a></li>
+    <li><a href="#buy">接线准备 · 买什么怎么插</a></li>
+    <li><a href="#pin">引脚分配表</a></li>
+    <li><a href="#elec">电气特性</a></li>
+    <li><a href="#cmd">控制命令速查</a></li>
+    <li><a href="#test">测试步骤</a></li>
+    <li><a href="#code">测试代码</a></li>
+    <li><a href="#board">板子架构 · 工程红线</a></li>
+    <li><a href="#next">下一步 / 当前挂起</a></li>
+  </ol>
+</nav>
+
+<h2 id="fact"><span class="n">01</span>关键事实速览</h2>
+<div class="cards">
+  <div class="card"><div class="h">物理接口</div><div class="v">D-Sub 25 针<br><small>母座(f)，两排 13+12</small></div></div>
+  <div class="card"><div class="h">可用线数</div><div class="v">16 路 TTL<br><small>DIO 1~16 + GND</small></div></div>
+  <div class="card"><div class="h">控制方式</div><div class="v">可编程<br><small>SCPI/FLEX，走现有 VISA</small></div></div>
+  <div class="card"><div class="h">自制板</div><div class="v">成立<br><small>= DIY 版 16440A/RSU</small></div></div>
+</div>
+<p>红框那个口里实际可用的是 16 路 TTL 数字 I/O；另外两个 BNC(Ext Trig In/Out)是单独的触发口。官方文档完整覆盖、完全可编程，跟你项目现有的 GPIB/VISA 链路是同一条，只是多发几条文本命令。</p>
+
+<h2 id="clarify"><span class="n">02</span>概念澄清（动手前必读）</h2>
+<div class="callout warn">
+  <span class="lbl">⚠ 这 16 根线不能"配置/驱动" SMU/WGFMU 的测量功能</span>
+  施压、量程、波形那些永远是软件经仪器总线设的（就是你现在代码在干的事）。Digital I/O 干的是<strong>外设控制 + 同步</strong>，不是替代总线去设测量。
+</div>
+<p>它能干的三件事：</p>
+<table>
+  <thead><tr><th style="width:130px">用途</th><th>说明</th><th style="width:150px">命令</th></tr></thead>
+  <tbody>
+    <tr><td><strong>① 输出驱动板子</strong></td><td>输出 16 位 TTL 去翻你自制板上的继电器，把 SMU/WGFMU/SPGU 切到不同 DUT 脚</td><td><code>ERC</code></td></tr>
+    <tr><td><strong>② 读外部状态</strong></td><td>读 16 位 TTL 做安全联锁：温控 ready / 探针 contact / interlock 异常就停</td><td><code>ERM</code>+<code>ERS?</code></td></tr>
+    <tr><td><strong>③ 硬件触发</strong></td><td>每根可配成 trigger 口，零软件延时触发/同步主机测量</td><td><code>TGP</code>+<code>OSX</code>/<code>PAX</code></td></tr>
+  </tbody>
+</table>
+<div class="callout ok">
+  <span class="lbl">✓ 所以你的想法成立</span>
+  "SMU+WGFMU 全插自制板 → B1500 用 16 根 DIO 控板 → 板子路由到器件"——这正是这个口的设计本意。官方 <strong>16440A 选择器</strong>就是经 16445A 适配器挂这个口、B1500 翻 DIO 位切 SMU↔SPGU 的（你 PPT 里那条"官方控制线"）。你做的是它的通用模式 DIY 版。
+</div>
+
+<h2 id="buy"><span class="n">03</span>接线准备 · 买什么 / 怎么插</h2>
+<p class="lead">注意：那是<strong>一个 25 针连接器（插一个插头）</strong>，不是 16 个独立口。一个插头里就带了全部 16 根 DIO + GND；16 根线在<strong>你这一侧</strong>散出来。</p>
+<h3>买什么（三选一，推荐第一个）</h3>
+<table>
+  <thead><tr><th style="width:170px">方案</th><th>淘宝搜索词</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td><strong>A. DB25 公头转接线端子板</strong> <span class="pill">推荐</span></td><td><code>DB25 公头 转接线端子</code></td><td>一头 DB25 插 B1500，另一头 25 个带编号螺丝端子。约 ¥20~40，免焊。</td></tr>
+    <tr><td>B. DB25 公头焊杯+外壳</td><td><code>DB25 公头 焊接 带外壳</code></td><td>会焊线最便宜，焊出要用的几针即可。</td></tr>
+    <tr><td>C. DB25 公头转杜邦线</td><td><code>DB25 公头 转杜邦线</code></td><td>拿到用万用表通断挡确认每根线对应第几针。</td></tr>
+  </tbody>
+</table>
+<div class="callout warn">
+  <span class="lbl">⚠ 买的时候别买错两点</span>
+  ① 要 <strong>公头（有针 pin）</strong>——B1500 那侧是母座（孔）。<br>
+  ② 要 <strong>标准 DB25（两排 13+12）</strong>，不是 HD 高密度 25 针（三排）。跟老电脑打印机/并口(LPT)同款外形，认准"两排"。
+</div>
+<h3>怎么插</h3>
+<ul>
+  <li>端子板插进 B1500 那个口，拧紧两颗固定螺丝。</li>
+  <li>只用到：<strong>DIO 在端子 3~10、15~22；GND 在端子 13 或 25。</strong></li>
+  <li>万用表黑笔→端子 13(GND)，红笔→端子 15(DIO1)，准备量电平。</li>
+</ul>
+
+<h2 id="pin"><span class="n">04</span>引脚分配表（手册 Table 2-6）</h2>
+<div class="pinwrap">
+  <table>
+    <thead><tr><th>针(上排)</th><th>信号</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">1</td><td class="nu">不用</td></tr>
+      <tr><td class="mono">2</td><td class="nu">不用</td></tr>
+      <tr><td class="mono">3</td><td class="dio">DIO 2</td></tr>
+      <tr><td class="mono">4</td><td class="dio">DIO 4</td></tr>
+      <tr><td class="mono">5</td><td class="dio">DIO 6</td></tr>
+      <tr><td class="mono">6</td><td class="dio">DIO 8</td></tr>
+      <tr><td class="mono">7</td><td class="dio">DIO 10</td></tr>
+      <tr><td class="mono">8</td><td class="dio">DIO 12</td></tr>
+      <tr><td class="mono">9</td><td class="dio">DIO 14</td></tr>
+      <tr><td class="mono">10</td><td class="dio">DIO 16</td></tr>
+      <tr><td class="mono">11</td><td class="nu">不用</td></tr>
+      <tr><td class="mono">12</td><td class="nu">不用</td></tr>
+      <tr><td class="mono">13</td><td class="gnd">GND</td></tr>
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>针(下排)</th><th>信号</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">14</td><td class="nu">不用</td></tr>
+      <tr><td class="mono">15</td><td class="dio">DIO 1</td></tr>
+      <tr><td class="mono">16</td><td class="dio">DIO 3</td></tr>
+      <tr><td class="mono">17</td><td class="dio">DIO 5</td></tr>
+      <tr><td class="mono">18</td><td class="dio">DIO 7</td></tr>
+      <tr><td class="mono">19</td><td class="dio">DIO 9</td></tr>
+      <tr><td class="mono">20</td><td class="dio">DIO 11</td></tr>
+      <tr><td class="mono">21</td><td class="dio">DIO 13</td></tr>
+      <tr><td class="mono">22</td><td class="dio">DIO 15</td></tr>
+      <tr><td class="mono">23</td><td class="nu">不用</td></tr>
+      <tr><td class="mono">24</td><td class="nu">不用</td></tr>
+      <tr><td class="mono">25</td><td class="gnd">GND</td></tr>
+    </tbody>
+  </table>
+</div>
+<p>规律：奇数 DIO(1,3,…,15)→针 15~22；偶数 DIO(2,4,…,16)→针 3~10；GND=针 13 & 25。<strong>DIO1 = bit0（最低位）。</strong></p>
+
+<h2 id="elec"><span class="n">05</span>电气特性（每根 DIO，手册 Figure 2-45）</h2>
+<table>
+  <tbody>
+    <tr><th style="width:160px">逻辑电平</th><td>TTL；高 ≈ 2.4 V，低 ≈ 0.8 V（实际拉低可到 ~0.3 V）</td></tr>
+    <tr><th>内部结构</th><td>Vcc = 5 V，上拉 R1 = 1 kΩ，串联 R2 = 100 Ω，下管 Q1（Vce(sat)=0.3 V）→ <strong>准开集（open-collector 带 1kΩ 上拉）</strong></td></tr>
+    <tr><th>驱动能力</th><td><strong>弱</strong>。能把线拉低、可线或；高电平靠 1kΩ 上拉。<strong>不能直推继电器线圈</strong>，要加缓冲。</td></tr>
+    <tr><th>板侧逻辑</th><td>用 5V TTL；做输入时给标准 TTL 电平。</td></tr>
+  </tbody>
+</table>
+
+<h2 id="cmd"><span class="n">06</span>控制命令速查</h2>
+<p>两组：<strong>数字口三件套</strong>（ERMOD / ERM / ERC / ERS?，控你的继电器板）+ <strong>触发四件套</strong>（TGP / OSX·OS / PAX·WSX，做硬件同步）。下方一句话速览，点每条命令展开看完整参数、例子、手册出处。</p>
+
+<div class="callout">
+  <span class="lbl">⚓ 位/权重锚点（命令里的数都从它来，先记这个）</span>
+  <strong>DIO n 的十进制权重 = 2ⁿ⁻¹</strong>：DIO1=1，DIO2=2，DIO3=4，DIO4=8 … DIO8=128 … DIO16=32768。<br>
+  要对 DIO a~b 一起操作，把它们的权重<strong>相加</strong>就是命令里的数（例 DIO1~8 = 1+2+…+128 = <strong>255</strong>）。<br>
+  手册引脚表写作「DIO n (bit n)」——那个 bit n 是<strong>从 1 数的第 n 位</strong>，最低位就是 DIO1；命令示例里偶尔又写「port 0~15」（从 0 数）。同一根线、两种数法，<strong>认权重不会错</strong>。
+</div>
+
+<table class="cmdsum">
+  <thead><tr><th style="width:200px">命令</th><th>一句话</th></tr></thead>
+  <tbody>
+    <tr><td><code>ERMOD mode[,opt]</code></td><td>选这 16 根线整体的控制模式（通用 / 各官方选择器）</td></tr>
+    <tr><td><code>ERM iport</code></td><td>设每根线是输入还是输出</td></tr>
+    <tr><td><code>ERC 2,value</code></td><td>设输出电平（高/低，⚠ 反逻辑）</td></tr>
+    <tr><td><code>ERS?</code></td><td>读回 16 根线状态</td></tr>
+    <tr><td><code>TGP port,term,pol[,type]</code></td><td>把某口登记成触发口</td></tr>
+    <tr><td><code>OSX port[,level]</code> / <code>OS</code></td><td>从某口主动发触发</td></tr>
+    <tr><td><code>PAX port[,wait]</code> / <code>WSX</code></td><td>停下等某口的触发再继续</td></tr>
+  </tbody>
+</table>
+
+<h3>展开详查</h3>
+
+<details>
+  <summary><code>ERMOD mode[,option]</code> — 选 16 根线整体当什么用</summary>
+  <div class="dbody">
+    <p>选数字 I/O 的控制模式。<strong>控你自制板 = 通用模式 <code>ERMOD 0</code></strong>（之后才能用 ERM/ERC/ERS?/TGP）。</p>
+    <table>
+      <tr><th>mode</th><td><code>0</code>=通用（初始，自己用 ERM/ERS?/ERC/TGP 控）｜<code>1</code>=16440A 选择器（经 16445A 适配器，改用 ERSSP）｜<code>2</code>=N1258A/N1259A｜<code>4</code>=N1265A｜<code>8</code>=N1266A｜<code>16</code>=N1268A｜<code>32</code>=N1272A</td></tr>
+      <tr><th>option</th><td><code>0</code>=禁用该模式｜<code>1</code>=启用（默认）</td></tr>
+    </table>
+    <pre><code>ERMOD 0      <span class="c"># 通用模式，控自制板就这条</span>
+ERMOD 1      <span class="c"># 进 16440A 选择器模式（之后用 ERSSP）</span></code></pre>
+    <p class="src">出处：编程手册 4-101~4-102。</p>
+  </div>
+</details>
+
+<details>
+  <summary><code>ERM iport</code> — 设每根线方向（输入/输出）</summary>
+  <div class="dbody">
+    <p>前提 <code>ERMOD 0</code>。改方向后该线被设成 TTL 高；<code>*RST</code> / device clear 后 16 根全部为输出、TTL 高。</p>
+    <table>
+      <tr><th>iport</th><td>0~65535 的位图。<strong>位=0→输出口，位=1→输入口</strong>。某 DIO 的位 = 它的权重 2ⁿ⁻¹。</td></tr>
+    </table>
+    <pre><code>ERM 0        <span class="c"># 16 根全输出（控板子常态）</span>
+ERM 255      <span class="c"># 255=1+2+…+128 → DIO1~8 设输入，其余输出</span>
+ERM 32768    <span class="c"># 仅 DIO16 设输入</span></code></pre>
+    <p class="src">出处：编程手册 4-100~4-101，原文例 <code>ERM 255</code> = 二进制 0000000011111111。</p>
+  </div>
+</details>
+
+<details>
+  <summary><code>ERC 2,value</code> — 设输出电平（⚠ 反逻辑）</summary>
+  <div class="dbody">
+    <p>前提 <code>ERMOD 0</code> 且对应位是输出。<strong>第一个参数固定 <code>2</code></strong>，第二个才是电平位图。</p>
+    <table>
+      <tr><th>value</th><td>0~65535 位图。<strong>位=0→TTL 高（≈2.4V），位=1→TTL 低（≈0.8V）</strong>——和直觉相反。某 DIO 的位 = 权重 2ⁿ⁻¹。</td></tr>
+    </table>
+    <pre><code>ERC 2,0       <span class="c"># 16 根全高</span>
+ERC 2,1       <span class="c"># 仅 DIO1 拉低（其余高）</span>
+ERC 2,3       <span class="c"># DIO1+DIO2 拉低（1+2）</span>
+ERC 2,65535   <span class="c"># 全部拉低</span></code></pre>
+    <p class="src">出处：编程手册命令参考 ERC。翻继电器板最常用的一条。</p>
+  </div>
+</details>
+
+<details>
+  <summary><code>ERS?</code> — 读回 16 根线状态</summary>
+  <div class="dbody">
+    <p>查询命令，返回当前 16 路状态位图（十进制）。读输入口（外部状态 / 联锁信号）用。</p>
+    <pre><code>ERS?          <span class="c"># 返回如 255 → 解析每一位看高/低</span></code></pre>
+    <p class="src">出处：编程手册命令参考 ERS?。</p>
+  </div>
+</details>
+
+<details>
+  <summary><code>TGP port,terminal,polarity[,type]</code> — 把某口登记成触发口</summary>
+  <div class="dbody">
+    <p>平时一根 DIO 是普通电平（ERC 控）；发 TGP 后它变成<strong>触发线</strong>，能收/发触发脉冲做硬件同步（零软件延时）。</p>
+    <table>
+      <tr><th>port</th><td><code>1~16</code>=数字口 DIO1~16｜<code>-1</code>=Ext Trig In（后面板 BNC）｜<code>-2</code>=Ext Trig Out（BNC）</td></tr>
+      <tr><th>terminal</th><td><code>1</code>=触发输入（收；port=-2 不可）｜<code>2</code>=触发输出（发；port=-1 不可）</td></tr>
+      <tr><th>polarity</th><td><code>1</code>=正逻辑｜<code>2</code>=负逻辑（初始）</td></tr>
+      <tr><th>type</th><td>默认 0。<code>0</code>=基础收/发（配 PA/WS/PAX/WSX/OS/OSX）｜<code>1/2/3</code>=与测量挂钩的自动触发（开始测量 / 测量完成 / 每扫描步同步等，需先发 <code>TM3</code>）</td></tr>
+    </table>
+    <pre><code>TGP 1,1,1      <span class="c"># DIO1 当触发输入，正逻辑，基础型(type0)</span>
+TGP 2,2,2      <span class="c"># DIO2 当触发输出，负逻辑</span>
+TGP -1,1,2     <span class="c"># Ext Trig In(BNC) 当触发输入，负逻辑</span></code></pre>
+    <p class="src">出处：编程手册 4-212~4-213（type 含义见 Table 4-31）。</p>
+  </div>
+</details>
+
+<details>
+  <summary><code>OSX port[,level]</code> / <code>OS</code> — 从某口主动发触发</summary>
+  <div class="dbody">
+    <p>从指定触发口发一个触发出去（前提：该口已用 <code>TGP</code> 设成触发输出）。<code>OS</code> 是简版，只能从 Ext Trig Out 那个 BNC 发边沿触发。</p>
+    <table>
+      <tr><th>port</th><td><code>-2</code>=Ext Trig Out（BNC）｜<code>1~16</code>=数字口（须与 TGP 设的口一致）</td></tr>
+      <tr><th>level</th><td><code>0</code>=逻辑低｜<code>1</code>=逻辑高｜<code>2</code>=边沿触发（默认）。门控触发：开始 <code>OSX port,1</code>、结束 <code>OSX port,0</code></td></tr>
+    </table>
+    <pre><code>OS            <span class="c"># 从 Ext Trig Out(BNC) 发一个边沿触发</span>
+OSX 1         <span class="c"># 从 DIO1 发边沿触发（DIO1 须先 TGP 设成输出）</span></code></pre>
+    <p class="src">出处：编程手册 4-162。配对命令是 PAX/WSX（一个发、一个等）。</p>
+  </div>
+</details>
+
+<details>
+  <summary><code>PAX port[,wait]</code> / <code>WSX</code> — 停下等某口的触发再继续</summary>
+  <div class="dbody">
+    <p>OSX 的反面：让 B1500 暂停命令 / 程序执行，直到等到指定口的触发（或超时）再继续。<code>WSX</code> 是类似的「进入等待态直到收到触发」。需配 <code>TM3</code>。</p>
+    <table>
+      <tr><th>port</th><td><code>-1</code>=Ext Trig In（BNC）｜<code>1~16</code>=数字口（须与 TGP 一致）</td></tr>
+      <tr><th>wait</th><td>-99.9999~99.9999 秒。不写或负值 = 一直等到触发来</td></tr>
+    </table>
+    <pre><code>PAX 1         <span class="c"># 停下，等 DIO1 来触发（一直等）</span>
+PAX -1,10     <span class="c"># 等 Ext Trig In，最多等 10 秒</span></code></pre>
+    <p class="src">出处：编程手册 4-164。</p>
+  </div>
+</details>
+
+<h3>📖 官方命令原表（手册逐条转写）</h3>
+<p>下面三张是手册里这一主题的<strong>原始命令清单</strong>，逐条转写过来方便整体查；末尾给了直接跳到本地 PDF 对应页的链接。</p>
+
+<details>
+  <summary>① 数字 I/O 端口命令（手册 2-71）</summary>
+  <div class="dbody">
+    <table>
+      <thead><tr><th style="width:96px">命令</th><th>功能</th><th style="width:150px">语法</th></tr></thead>
+      <tbody>
+        <tr><td><code>ERM</code></td><td>改数字 I/O 口的输入/输出分配</td><td><code>ERM iport</code></td></tr>
+        <tr><td><code>ERS?</code></td><td>返回数字 I/O 口状态</td><td><code>ERS?</code></td></tr>
+        <tr><td><code>ERC</code></td><td>改数字 I/O 口的输出状态（电平）</td><td><code>ERC 2,value</code></td></tr>
+      </tbody>
+    </table>
+    <p class="src">原文：连接器=D-Sub 25 针；初始全口 TTL 高（≈2.4V，低≈0.8V）；以上命令对非触发口 DIO1~16 可用。出处 2-71。</p>
+  </div>
+</details>
+
+<details>
+  <summary>② 触发功能命令（手册 3-118~3-119）</summary>
+  <div class="dbody">
+    <p>B1500 有 8 个触发口，可各自独立配置，用于与外部设备同步。</p>
+    <p class="grp">配置类（设触发口 / 触发类型）</p>
+    <table>
+      <thead><tr><th style="width:84px">命令</th><th>功能</th><th style="width:170px">语法</th></tr></thead>
+      <tbody>
+        <tr><td><code>TGP</code></td><td>给指定端子设置触发口</td><td><code>TGP port,terminal,polarity[,type]</code></td></tr>
+        <tr><td><code>TGPC</code></td><td>清除指定口的触发设置</td><td><code>TGPC [port…[,port]…]</code></td></tr>
+        <tr><td><code>TGSI</code></td><td>选扫描首步/末步是否忽略 Start Step Output Setup 触发输入</td><td><code>TGSI mode</code></td></tr>
+        <tr><td><code>TGSO</code></td><td>选 Step Output Setup 完成触发输出的类型（边沿/门控）</td><td><code>TGSO mode</code></td></tr>
+        <tr><td><code>TGXO</code></td><td>选测量完成触发输出的类型（边沿/门控）</td><td><code>TGXO mode</code></td></tr>
+        <tr><td><code>TGMO</code></td><td>选每扫描步测量完成触发输出的类型（边沿/门控）</td><td><code>TGMO mode</code></td></tr>
+        <tr><td><code>TM3</code></td><td>启用 <code>TGP …,1</code> 设的触发（= TM 命令 mode 3）</td><td><code>TM3</code></td></tr>
+      </tbody>
+    </table>
+    <p class="grp">发 / 等类</p>
+    <table>
+      <thead><tr><th style="width:84px">命令</th><th>功能</th><th style="width:170px">语法</th></tr></thead>
+      <tbody>
+        <tr><td><code>OS</code></td><td>从 Ext Trig Out 端子发触发</td><td><code>OS</code></td></tr>
+        <tr><td><code>OSX</code></td><td>从指定口发触发</td><td><code>OSX port[,level]</code></td></tr>
+        <tr><td><code>WS</code></td><td>进入等待态，直到经 Ext Trig In 收到外部触发</td><td><code>WS [mode]</code></td></tr>
+        <tr><td><code>WSX</code></td><td>进入等待态，直到经指定口收到外部触发</td><td><code>WSX port[,mode]</code></td></tr>
+        <tr><td><code>PA</code></td><td>暂停执行，直到等待时间到，或（已发 TM3 时）Ext Trig In 收到触发</td><td><code>PA [wait]</code></td></tr>
+        <tr><td><code>PAX</code></td><td>暂停执行，直到等待时间到，或（已发 TM3 时）指定口收到触发</td><td><code>PAX port[,wait]</code></td></tr>
+      </tbody>
+    </table>
+    <p class="src">出处 3-118~3-119；每条的完整参数见命令参考第 4 章（下方跳转链接）。</p>
+  </div>
+</details>
+
+<details>
+  <summary>③ 选择器 / 扩展盒模式命令（ERMOD + 各模式专用，手册 4-101~4-102）</summary>
+  <div class="dbody">
+    <table>
+      <thead><tr><th style="width:90px">ERMOD</th><th>设备</th><th>该模式用的命令</th></tr></thead>
+      <tbody>
+        <tr><td><code>0</code></td><td>通用（控自制板 / 外设）</td><td>ERM, ERS?, ERC, TGP</td></tr>
+        <tr><td><code>1</code></td><td>16440A SMU/PGU 选择器（经 16445A）</td><td>ERSSP, ERSSP?</td></tr>
+        <tr><td><code>2</code></td><td>N1258A / N1259A 模块选择器</td><td>ERHPA, ERHPP, ERHPP?</td></tr>
+        <tr><td><code>4</code></td><td>N1265A 超大电流扩展 / 夹具</td><td>ERPFDA, ERPFDP, ERPFDS, ERPFGA, ERPFGP, ERPFGR, ERPFTEMP?, ERPFUHCA, ERPFUHCMAX?</td></tr>
+        <tr><td><code>8</code></td><td>N1266A HVSMU 电流扩展</td><td>ERHVCA, ERHVP, ERHVPV, ERHVS</td></tr>
+        <tr><td><code>16</code></td><td>N1268A 超高压扩展</td><td>ERUHVA</td></tr>
+        <tr><td><code>32</code></td><td>N1272A 器件电容选择器</td><td>（详见手册）</td></tr>
+      </tbody>
+    </table>
+    <p class="src">出处 4-101~4-102。<strong>你的自制板用模式 0</strong>，其余是接官方扩展盒才用。</p>
+  </div>
+</details>
+
+<div class="callout pdflinks">
+  <span class="lbl">🔗 跳转官方文档（本地 PDF，相对链接）</span>
+  指向同项目 <code>项目3_B1500自动化/b1500 program guide/9018-01851.pdf</code>。用 Chrome / Edge 打开本页时点链接可直接跳到指定页（<code>#page=</code> 锚点）：<br>
+  · <a href="../../../b1500%20program%20guide/9018-01851.pdf">整本编程手册（9018-01851，Ed.15）</a><br>
+  · <a href="../../../b1500%20program%20guide/9018-01851.pdf#page=159">数字 I/O 端口 2-71</a>
+    <a href="../../../b1500%20program%20guide/9018-01851.pdf#page=418">ERM 4-100</a>
+    <a href="../../../b1500%20program%20guide/9018-01851.pdf#page=419">ERMOD 4-101</a>
+    <a href="../../../b1500%20program%20guide/9018-01851.pdf#page=298">触发命令表 3-118</a><br>
+  · <a href="../../../b1500%20program%20guide/9018-01851.pdf#page=530">TGP 4-212</a>
+    <a href="../../../b1500%20program%20guide/9018-01851.pdf#page=480">OS / OSX 4-162</a>
+    <a href="../../../b1500%20program%20guide/9018-01851.pdf#page=482">PAX 4-164</a>
+  <br><small>注：若浏览器拦相对文件链接打不开，手动开 <code>b1500 program guide\9018-01851.pdf</code> 跳对应页即可。</small>
+</div>
+
+<h2 id="test"><span class="n">07</span>测试步骤（先验 16 根线，不接器件、零风险）</h2>
+<div class="step"><div class="num">1</div><div class="body"><strong>接好</strong>：DB25 公头端子板插进 Digital I/O 口拧紧。万用表黑笔→端子13(GND)，红笔→端子15(DIO1)。本机资源串 <code>GPIB1::17::INSTR</code>（或 <code>autodetect_visa_addr("B1500")</code>）。</div></div>
+<div class="step"><div class="num">2</div><div class="body"><strong>进通用模式</strong>：发 <code>ERMOD 0</code>。</div></div>
+<div class="step"><div class="num">3</div><div class="body"><strong>全高→全低</strong>：<code>ERC 2,0</code> 量 DIO1 应 ≈2.4V↑；<code>ERC 2,65535</code> 应 ≈0.8V↓。电压跟着命令跳 = 控得动。</div></div>
+<div class="step"><div class="num">4</div><div class="body"><strong>实测确认引脚映射</strong>：发 <code>ERC 2,1</code>（只拉低 DIO1），<strong>哪个端子电压掉到 ~0.8V，那个就是 DIO1</strong>。逐位 <code>ERC 2,2/4/8…</code> 核对 DIO2/3/4…，不靠猜。</div></div>
+<div class="step"><div class="num">5</div><div class="body"><strong>读回</strong>：<code>ERS?</code> 看状态位图。收尾 <code>ERC 2,0</code> 全高复位。</div></div>
+<div class="callout">
+  <span class="lbl">内置自检</span>
+  <code>DIAG? 4</code> = Digital I/O 自检（返回 0=过）。<strong>跑前务必拔掉这个口所有外接线。</strong>　<code>DIAG? 1</code> = Trig In/Out 自检（需 BNC 把 Ext Trig In↔Out 短接）。
+</div>
+
+<h2 id="code"><span class="n">08</span>测试代码 <span class="pill">scripts/digital_io_smoke.py</span></h2>
+<p>套现有 pyvisa 链路，纯翻 TTL、逐根验、读回，不接器件：</p>
+<pre><code><span class="c"># digital_io_smoke.py — B1500 Digital I/O 16 路 TTL 自检（不接器件，纯量电平）</span>
+<span class="k">import</span> pyvisa, time
+
+ADDR = <span class="s">"GPIB1::17::INSTR"</span>   <span class="c"># 或用 autodetect_visa_addr("B1500")</span>
+
+<span class="c"># DIO n -> 端子(针)号，来自手册 Table 2-6</span>
+PIN = {1:15,2:3,3:16,4:4,5:17,6:5,7:18,8:6,9:19,10:7,11:20,12:8,13:21,14:9,15:22,16:10}
+
+<span class="k">def</span> bit(n):           <span class="c"># DIO n 的位权（DIO1=bit0）</span>
+    <span class="k">return</span> 1 << (n - 1)
+
+rm = pyvisa.ResourceManager()
+inst = rm.open_resource(ADDR)
+inst.timeout = 10000
+<span class="k">try</span>:
+    inst.clear()                       <span class="c"># 轻 preflight</span>
+    <span class="k">while</span> inst.query(<span class="s">"ERRX?"</span>).strip().split(<span class="s">","</span>)[0] <span class="k">not in</span> (<span class="s">"0"</span>,<span class="s">"+0"</span>):
+        <span class="k">pass</span>                           <span class="c"># 排空错误队列</span>
+    print(<span class="s">"IDN:"</span>, inst.query(<span class="s">"*IDN?"</span>).strip())
+
+    inst.write(<span class="s">"ERMOD 0"</span>)             <span class="c"># 通用控制模式</span>
+    inst.write(<span class="s">"ERC 2,0"</span>)              <span class="c"># 16 路全部输出高</span>
+    print(<span class="s">"全高，量 DIO1(针15) vs GND(针13) 应≈2.4V+"</span>); time.sleep(1)
+
+    <span class="c"># 逐根拉低，确认端子映射</span>
+    <span class="k">for</span> n <span class="k">in</span> range(1, 17):
+        inst.write(<span class="o">f</span><span class="s">"ERC 2,{bit(n)}"</span>)    <span class="c"># 只把 DIO n 拉低，其余高</span>
+        print(<span class="o">f</span><span class="s">"DIO{n:<2} 拉低 -> 量针{PIN[n]} 应≈0.8V   ERS?={inst.query('ERS?').strip()}"</span>)
+        time.sleep(0.8)
+
+    inst.write(<span class="s">"ERC 2,65535"</span>); print(<span class="s">"全低"</span>); time.sleep(1)
+    inst.write(<span class="s">"ERC 2,0"</span>)              <span class="c"># 收尾全高复位</span>
+    print(<span class="s">"完成。"</span>)
+<span class="k">finally</span>:
+    inst.close(); rm.close()</code></pre>
+<div class="callout ok">
+  <span class="lbl">✓ 安全</span>
+  这段只切换 16 根 TTL 电平、读状态，<strong>不接任何器件、不动 SMU/WGFMU 输出</strong>，零风险。验完即证明这 16 根线你能随意控了。
+</div>
+
+<h2 id="board"><span class="n">09</span>板子架构 · 工程红线</h2>
+<p>目标板 = <strong>选择器/开关矩阵板</strong>：SMU + WGFMU 测量线全插板上，B1500 用 16 根 DIO 翻继电器，把对应源路由到器件。<strong>架构成立、是正路。</strong>真正难点只在信号完整性。</p>
+<h3>两套线分开（核心）</h3>
+<table>
+  <tbody>
+    <tr><th style="width:130px">控制路径</th><td>16 根 DIO（弱 5V TTL）→ 只决定"哪个继电器闭合"</td></tr>
+    <tr><th>信号路径</th><td>SMU triax(力/感+guard)、WGFMU 同轴脉冲 → <strong>不经 DIO</strong>，单独插板、由继电器切到 DUT</td></tr>
+  </tbody>
+</table>
+<h3>四条工程红线</h3>
+<div class="callout warn">
+  <span class="lbl">① SMU 侧保 guard + Kelvin</span>
+  继电器带来漏电/电缆电容/丢 guard，毁低电流精度(pA~nA)。用低漏/干簧(reed)/带保护继电器，布局保 guard。FeFET 到 µA 级可放松，但要心里有数。
+</div>
+<div class="callout warn">
+  <span class="lbl">② WGFMU 快脉冲最怕继电器 stub</span>
+  µs/ns 快沿被继电器寄生电容/电感糊掉。现拓扑 baseline ~1.14µA 本就是 3m HRSU ~150pF 寄生主导，再串继电器更糟。Keysight 的解法是 RSU（探针端切，现有 3 个 RSU 就是它）。→ 切 DC/SMU 路由或"SMU↔WGFMU 模式"OK；把 WGFMU 快测路径塞进通用继电器板有风险，用射频/干簧继电器+极短 stub 或照 RSU 思路，先单独验快沿。
+</div>
+<div class="callout">
+  <span class="lbl">③ 继电器驱动</span>
+  DIO 弱上拉不能直推线圈 → 板上 ULN2003/MOSFET/光耦 + <strong>独立线圈电源</strong>。16 根线最多直驱 16 个继电器(1bit/个)；要更多加移位寄存器/IO 扩展。
+</div>
+<div class="callout">
+  <span class="lbl">④ 切源 break-before-make</span>
+  先断后通，别把两个源短一起；软件里按位序发 <code>ERC</code> 控制时序。
+</div>
+<h3>官方参照：16440A 是什么</h3>
+<p>Keysight <strong>16440A = 官方 SMU/脉冲发生器选择器（一个继电器盒）</strong>，两路输入(SMU + SPGU 脉冲)，由 B1500 经 <strong>16445A 选择器适配器</strong>插这个口控制(<code>ERMOD 1</code>+<code>ERSSP</code>)，把器件脚在 SMU↔SPGU 间切换。<strong>它就是你要自制那块板的官方商品版。</strong></p>
+
+<h2 id="next"><span class="n">10</span>下一步 / 当前挂起</h2>
+<div class="callout">
+  <span class="lbl">⏸ 当前挂起（等硬件）</span>
+  椰椰买 <strong>DB25 公头转接线端子板</strong>（标准两排、公头）。到手插上 → 跑第 7/8 节的 16 线 smoke 验证。
+</div>
+<ol>
+  <li><strong>买插头</strong>（端子板）→ 插上跑 <code>digital_io_smoke.py</code>，确认 16 根线全可控 + 引脚映射。</li>
+  <li><strong>定板子目标</strong>：路由切换 / 安全联锁 / 触发同步（可叠加）→ 画 <strong>DIO bit → 继电器 → 信号通路映射表</strong>。</li>
+  <li><strong>软件封装</strong>：在 <code>src/fefetlab/b1500/driver.py</code> 加 ERMOD/ERM/ERC/ERS?/TGP 薄封装（Mock 先行，跟 DC/WGFMU 一样走 VISA）。</li>
+  <li><strong>WGFMU 触发待核实</strong>：本口 TGP 主要覆盖主机 SMU/CMU/SPGU；WGFMU 自带触发口，是否能经本口同步需另查 B1530A 手册。</li>
+</ol>
+
+<footer>
+  视觉语言沿用能力池 <strong>kami</strong>（parchment / ink-blue / serif），单文件屏幕版工作文档，未走 PDF 打印管线。<br>
+  数据全部出自 <code>b1500 program guide/9018-01851.pdf</code>（Programming Guide Ed.15）ch.2-71~2-87 + 命令参考 ERMOD/ERM/ERC/ERS?/ERMOD?/TGP/OSX/PAX。配套 Markdown 档案见 <code>_agent/references/digital_io_port_自制板控制_档案.md</code>。
+</footer>
+
+</body>
+</html>

@@ -1063,7 +1063,9 @@ def print_plan(args) -> None:
 # have passed since that anchor before driving hardware. The realized rest is
 # printed (REST_GATE_DONE) so it lands in the run log. Wall-clock based, good
 # to ~1 s — replaces hand-timed rests (2026-06-06 polarity round: 19-70 s).
-REST_ANCHOR_PATH = _HERE.parent / "runs" / "rest_anchor.txt"
+# M1 搬家(2026-06-10)漏改处：原 _HERE(=scripts/) 已更名 _SRC(=<root>/src)，
+# _SRC.parent 与旧 _HERE.parent 同为仓库根，rest_anchor 落点不变 (2026-06-11 修复)
+REST_ANCHOR_PATH = _SRC.parent / "runs" / "rest_anchor.txt"
 
 
 def _write_rest_anchor(path: Path = REST_ANCHOR_PATH) -> None:
