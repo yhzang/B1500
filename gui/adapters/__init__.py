@@ -5,6 +5,7 @@ import 各适配模块以触发其 `@register_plot(...)` 把画法登记进
 """
 from __future__ import annotations
 
-from . import fefet_plots  # noqa: F401  (import 即注册)
+from . import dc_plots  # noqa: F401  (import 即注册 "dc" schema)
+from . import fefet_plots  # noqa: F401  (import 即注册 "fefet_fixedcols")
 
-__all__ = ["fefet_plots"]
+__all__ = ["fefet_plots", "dc_plots"]

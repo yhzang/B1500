@@ -62,14 +62,17 @@ def _cleanup(out_csv: Path) -> None:
 
 # STAGES = 有金标准的 12 段(下方逐字节回归用);ISPP 是闭环新协议,不进金标准列表
 # (dry 读为占位、收敛轨迹无意义),但仍需在 REGISTRY 注册 + 被 covers 检查覆盖。
-COVERED = set(STAGES) | {"ISPP"}
+COVERED = set(STAGES) | {"ISPP", "DC_IDVG", "DC_IDVD"}  # +ISPP 闭环 +SMU DC 族(增量6b)
 
 
 def test_registry_covers_all_eleven_stages():
     assert set(REGISTRY) == COVERED
     for sid in COVERED:
         assert callable(REGISTRY[sid].runner)
+    for sid in set(STAGES) | {"ISPP"}:          # WGFMU 族
         assert REGISTRY[sid].family == "WGFMU"
+    for sid in ("DC_IDVG", "DC_IDVD"):           # SMU 族(增量6b)
+        assert REGISTRY[sid].family == "SMU"
 
 
 @pytest.mark.parametrize("stage", STAGES)

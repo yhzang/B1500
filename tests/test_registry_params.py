@@ -25,10 +25,20 @@ def _all_specs():
             yield sid, p
 
 
+SMU_STAGES = ["DC_IDVG", "DC_IDVD"]  # 增量6b:SMU 族(cli_flag=None,不进 WGFMU argparse 比对)
+
+
 def test_registry_covers_eleven_stages_each_nonempty():
-    assert set(REGISTRY) == set(STAGES)
-    for sid in STAGES:
+    assert set(REGISTRY) == set(STAGES) | set(SMU_STAGES)
+    for sid in STAGES + SMU_STAGES:
         assert REGISTRY[sid].params, f"{sid} 的 params 为空"
+
+
+def test_smu_dc_family_registered():
+    for sid in SMU_STAGES:
+        assert REGISTRY[sid].family == "SMU", f"{sid} family 应为 SMU"
+        assert REGISTRY[sid].csv_schema == "dc", f"{sid} csv_schema 应为 dc"
+        assert callable(REGISTRY[sid].runner)
 
 
 def test_paramspec_name_matches_derived_cli_dest():

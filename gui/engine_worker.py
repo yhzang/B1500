@@ -87,9 +87,10 @@ class EngineWorker(QObject):
     def run(self) -> None:
         # 延迟 import:保持 GUI 包加载轻,且 import 错误也能落到本方法的 except
         try:
-            from fefetlab.engine import ParamView, ProtocolEngine
+            from fefetlab.engine import ParamView, ProtocolEngine, REGISTRY
             from fefetlab.orchestration.core import StopGate
             from fefetlab.protocols import wgfmu_fefet
+            from fefetlab.protocols.smu_dc import make_backend_for
         except Exception as exc:  # noqa: BLE001
             self.errorOccurred.emit(exc, False)
             self.finished.emit()
@@ -110,12 +111,16 @@ class EngineWorker(QObject):
                              f"device_id={params.get('device_id')}")
             # 先应用通道映射(镜像 CLI main() 顺序:configure 在 make_backend 之前)。
             # 否则 make_backend 读到的是上次/默认的模块全局,run N 会依赖 run N-1。
-            try:
-                wgfmu_fefet.configure_channel_map(ParamView(params))
-            except StopGate as exc:
-                cb.on_stop_gate(getattr(exc, "code", "SETUP_STOP"), str(exc), False)
-                return
-            backend, _resource = wgfmu_fefet.make_backend(req.live)
+            # family 分流(增量6b):WGFMU 才做通道映射(镜像 CLI 顺序);SMU 旁路。backend 按 family 选。
+            spec = REGISTRY.get(req.stage)
+            family = spec.family if spec is not None else "WGFMU"
+            if family == "WGFMU":
+                try:
+                    wgfmu_fefet.configure_channel_map(ParamView(params))
+                except StopGate as exc:
+                    cb.on_stop_gate(getattr(exc, "code", "SETUP_STOP"), str(exc), False)
+                    return
+            backend, _resource = make_backend_for(family, req.live)
             try:
                 ProtocolEngine().run(req.stage, params, backend=backend,
                                      callbacks=cb, confirm=req.confirm)

@@ -66,8 +66,9 @@ class ProtocolEngine:
         live = bool(params.get("live", False))
         view = ParamView(params)
         try:
-            configure_channel_map(view)                       # 通道映射 + 合法性(gate≠drain/禁用集)
-            validate_live_request(protocol_id, live, confirm)  # live 一段一确认,原样复用 core.py
+            if spec.family == "WGFMU":
+                configure_channel_map(view)                   # 仅 WGFMU:通道映射 + 合法性(gate≠drain/禁用集);SMU 旁路
+            validate_live_request(protocol_id, live, confirm)  # live 一段一确认,family 无关,原样复用 core.py
             summary = spec.runner(backend, view, callbacks=cb)  # run_stage_*(backend, view, *, callbacks=None)
             cb.on_stage_done(summary, summary.out_csv.parent)
             return summary

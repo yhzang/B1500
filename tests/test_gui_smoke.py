@@ -309,6 +309,28 @@ def test_run_browser_panel_constructs_and_lists(tmp_path):
     assert len(p._entries) == 1
 
 
+def test_run_browser_scans_dc_run(tmp_path):
+    """增量6b:DC dry 跑完落四级目录 + manifest,RunBrowser scan_runs 扫得到、stage=DC_IDVG。"""
+    pytest.importorskip("pyqtgraph")
+    _ensure_app()
+    from fefetlab.engine import ProtocolEngine
+    from fefetlab.measurements.dc.testing_utils import MockB1500
+
+    from gui.run_browser_panel import scan_runs
+
+    params = {
+        "device_id": "DCDEV", "geometry": "L40W10", "serial": "",
+        "gate_ch": 4, "drain_ch": 5, "smu_s_ch": 6,
+        "dc_vg_points": "0,-0.5,-1.0", "dc_vd_fixed": -0.1, "dc_vs_fixed": 0.0,
+        "live": False, "out_root": str(tmp_path),
+    }
+    ProtocolEngine().run("DC_IDVG", params, backend=MockB1500())
+    entries = scan_runs(str(tmp_path))
+    assert len(entries) == 1
+    assert entries[0]["stage"] == "DC_IDVG"
+    assert entries[0]["csv"].endswith("data.csv")
+
+
 def test_app_writes_run_log_no_bom(tmp_path):
     """增量3:跑完把日志缓冲写进 run 目录 run_log.txt(UTF-8 无 BOM)。"""
     _ensure_app()

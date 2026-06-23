@@ -298,6 +298,49 @@ _STAGE_PARAMS: dict[str, tuple[ParamSpec, ...]] = {
 }
 
 
+# ── SMU(DC)族 ParamSpec(增量6b)。cli_flag=None = GUI/引擎专用、不进 WGFMU CLI,
+#    故 test_registry_params 的 argparse 比对自动跳过(且 DC 段不在其 STAGES 内,双保险)──
+def _dcp(name, kind, default, *, label, unit="", vis=V.BASIC, widget=W.DOUBLE_SPINBOX,
+         choices=None, minimum=None, help=""):
+    return ParamSpec(name=name, label=label, kind=kind, default=default, unit=unit,
+                     visibility=vis, minimum=minimum, maximum=None, choices=choices,
+                     widget=widget, cli_flag=None, help=help)
+
+
+_META_SMU = {
+    "DC_IDVG": ("DC 转移特性 Id-Vg(SMU)", "transfer"),
+    "DC_IDVD": ("DC 输出特性 Id-Vd(SMU)", "output"),
+}
+
+_DC_COMMON = (
+    _dcp("gate_ch", K.INT, 4, label="Gate 通道(SMU)", vis=V.LOCKED, widget=W.CHANNEL,
+         help="SMU Gate 通道;dry MockB1500 在 ch4 仿真"),
+    _dcp("drain_ch", K.INT, 5, label="Drain 通道(SMU)", vis=V.LOCKED, widget=W.CHANNEL,
+         help="SMU Drain 通道;dry MockB1500 在 ch5 仿真"),
+    _dcp("smu_s_ch", K.INT, 6, label="Source 通道(SMU)", vis=V.LOCKED, widget=W.CHANNEL,
+         help="SMU Source 通道"),
+    _dcp("dc_vs_fixed", K.FLOAT, 0.0, label="Vs 固定", unit="V"),
+    _dcp("live", K.BOOL, False, label="联机(真机)", vis=V.ADVANCED, widget=W.CHECKBOX,
+         help="SMU live 待器件;dry 用 MockB1500"),
+)
+
+_SMU_PARAMS = {
+    "DC_IDVG": (
+        _dcp("dc_vg_points", K.FLOAT_LIST, "0,-0.5,-1.0,-1.5,-2.0", label="Vg 扫描点", unit="V",
+             widget=W.CSV_LINE, help="Id-Vg 的 Vg 扫描点(逗号分隔)"),
+        _dcp("dc_vd_fixed", K.FLOAT, -0.1, label="Vd 固定", unit="V", help="Id-Vg 的固定 Vd"),
+        *_DC_COMMON,
+    ),
+    "DC_IDVD": (
+        _dcp("dc_vg_points", K.FLOAT_LIST, "0,-1.0,-2.0", label="Vg 偏置点", unit="V",
+             widget=W.CSV_LINE, help="Id-Vd 的各 Vg 偏置(逗号分隔)"),
+        _dcp("dc_vd_points", K.FLOAT_LIST, "0,-0.2,-0.4,-0.6,-0.8,-1.0", label="Vd 扫描点", unit="V",
+             widget=W.CSV_LINE, help="Id-Vd 的 Vd 扫描点(逗号分隔)"),
+        *_DC_COMMON,
+    ),
+}
+
+
 def _build_registry() -> dict[str, ProtocolSpec]:
     registry: dict[str, ProtocolSpec] = {}
     for sid, sspec in STAGE_REGISTRY.items():
@@ -310,6 +353,21 @@ def _build_registry() -> dict[str, ProtocolSpec]:
             description=sspec.description,
             params=_STAGE_PARAMS.get(sid, ()),
             csv_schema="fefet_fixedcols",
+            output_label=sspec.output_label,
+            runner=sspec.runner,
+        )
+    # ── SMU(DC)族(增量6b):纯加法,WGFMU 循环一字不动 ──
+    from ..protocols.smu_dc import SMU_STAGE_REGISTRY
+    for sid, sspec in SMU_STAGE_REGISTRY.items():
+        title, physics = _META_SMU.get(sid, (sid, ""))
+        registry[sid] = ProtocolSpec(
+            id=sid,
+            title=title,
+            family="SMU",
+            physics=physics,
+            description=sspec.description,
+            params=_SMU_PARAMS.get(sid, ()),
+            csv_schema="dc",
             output_label=sspec.output_label,
             runner=sspec.runner,
         )
