@@ -95,15 +95,21 @@ if _HAVE_QT:
             btn_browse = QPushButton("浏览…")
             btn_refresh = QPushButton("刷新")
             btn_overlay = QPushButton("叠加所选")
+            btn_export = QPushButton("导出图")
+            btn_reflow = QPushButton("回流项目4…")
             btn_browse.clicked.connect(self._browse_root)
             btn_refresh.clicked.connect(self.refresh)
             btn_overlay.clicked.connect(self._overlay_selected)
+            btn_export.clicked.connect(self._on_export_plot)
+            btn_reflow.clicked.connect(self._on_reflow)
             top = QHBoxLayout()
             top.addWidget(QLabel("数据根:"))
             top.addWidget(self._root_edit)
             top.addWidget(btn_browse)
             top.addWidget(btn_refresh)
             top.addWidget(btn_overlay)
+            top.addWidget(btn_export)
+            top.addWidget(btn_reflow)
 
             self.tree = QTreeWidget()
             self.tree.setHeaderHidden(True)
@@ -121,9 +127,12 @@ if _HAVE_QT:
             split.setStretchFactor(0, 2)
             split.setStretchFactor(1, 3)
 
+            self._status = QLabel("")
+            self._status.setStyleSheet("color:#2E7D32;")
             lay = QVBoxLayout(self)
             lay.addLayout(top)
             lay.addWidget(split)
+            lay.addWidget(self._status)
             self._entries: list[dict] = []
             self.refresh()
 
@@ -222,6 +231,65 @@ if _HAVE_QT:
             if d:
                 self._root_edit.setText(d)
                 self.refresh()
+
+        # ── 导出 / 回流项目4 ──────────────────────────────────────────────
+        def _selected_entries(self) -> list[dict]:
+            runs = [it.data(0, _ROLE) for it in self.tree.selectedItems() if it.data(0, _ROLE)]
+            if not runs:
+                cur = self.tree.currentItem()
+                if cur is not None and cur.data(0, _ROLE):
+                    runs = [cur.data(0, _ROLE)]
+            return runs
+
+        def _on_export_plot(self) -> None:
+            if not _HAVE_PG:
+                return
+            path, _ = QFileDialog.getSaveFileName(self, "保存图片", "", "PNG 图片 (*.png);;SVG 矢量图 (*.svg)")
+            if path:
+                ok = self.save_plot_image(path)
+                self._status.setText(f"已保存图片:{path}" if ok else "保存图片失败")
+
+        def save_plot_image(self, path: str) -> bool:
+            if not _HAVE_PG:
+                return False
+            try:
+                import pyqtgraph.exporters as pe
+
+                exporter = (pe.SVGExporter if str(path).lower().endswith(".svg")
+                            else pe.ImageExporter)(self._plot.plotItem)
+                exporter.export(str(path))
+                return True
+            except Exception:  # noqa: BLE001
+                return False
+
+        def _on_reflow(self) -> None:
+            runs = self._selected_entries()
+            if not runs:
+                self._status.setText("请先选一个或多个 run")
+                return
+            d = QFileDialog.getExistingDirectory(self, "回流到项目4 实测数据目录", self._root)
+            if not d:
+                return
+            n = 0
+            for e in runs:
+                try:
+                    self.reflow_run_to(e, d)
+                    n += 1
+                except Exception:  # noqa: BLE001
+                    pass
+            self._status.setText(f"已回流 {n} 个 run → {d}(UTF-8 无 BOM)")
+
+        def reflow_run_to(self, entry: dict, target_dir) -> Path:
+            """把一个 run 的 CSV + manifest 复制到 target_dir/<run>/,统一 UTF-8 无 BOM(回流项目4)。"""
+            src_dir = Path(entry["dir"])
+            dst = Path(target_dir) / entry["run"]
+            dst.mkdir(parents=True, exist_ok=True)
+            for name in {Path(entry["csv"]).name, "manifest.yaml"}:
+                src = src_dir / name
+                if src.exists():
+                    text = src.read_text(encoding="utf-8-sig", errors="ignore")  # 读吃掉 BOM
+                    (dst / name).write_text(text, encoding="utf-8")              # 写无 BOM
+            return dst
 
 
 def _default_root() -> str:
