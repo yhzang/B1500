@@ -13,6 +13,7 @@ from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QDockWidget,
     QLabel,
     QMainWindow,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import adapters  # noqa: F401  触发 plot_dispatch 注册(FeFET 画法)
+from . import presets
 from .engine_controller import EngineController
 from .log_panel import LogPanel
 from .models import RunRequest
@@ -82,7 +84,9 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, log_dock)
         self.log_dock = log_dock
 
+        self._presets_root = Path(__file__).resolve().parents[1]
         self._build_menu()
+        self._build_toolbar()
         self._build_status_bar()
         self._wire()
         self._restore_layout()
@@ -121,6 +125,83 @@ class MainWindow(QMainWindow):
         self._wiring_label = QLabel(self._wiring_text())
         self.statusBar().addPermanentWidget(self._wiring_label)
         self.statusBar().showMessage("就绪(dry-run 默认;本机为分析机,运行在测试机)")
+
+    # ── 命名预设(类 EasyEXPERT Favorite Setup)──────────────────────────────
+    def _build_toolbar(self) -> None:
+        from PySide6.QtWidgets import QToolBar
+
+        tb = QToolBar("预设")
+        tb.setObjectName("preset_toolbar")
+        tb.addWidget(QLabel(" 预设: "))
+        self._preset_combo = QComboBox()
+        self._preset_combo.setMinimumWidth(160)
+        tb.addWidget(self._preset_combo)
+        for text, slot in (("加载", self._on_preset_load),
+                           ("保存为…", self._on_preset_save),
+                           ("删除", self._on_preset_delete)):
+            act = QAction(text, self)
+            act.triggered.connect(slot)
+            tb.addAction(act)
+        self.addToolBar(tb)
+        self._refresh_presets()
+
+    def _refresh_presets(self) -> None:
+        cur = self._preset_combo.currentText()
+        self._preset_combo.clear()
+        names = presets.list_presets(self._presets_root)
+        self._preset_combo.addItems(names)
+        if cur in names:
+            self._preset_combo.setCurrentText(cur)
+
+    def _on_preset_save(self) -> None:
+        from PySide6.QtWidgets import QInputDialog
+
+        if not self.protocol_panel.current_protocol_id():
+            self.run_control.set_status("请先选协议再存预设", error=True)
+            return
+        name, ok = QInputDialog.getText(self, "保存预设", "预设名:")
+        if ok and name.strip():
+            self.save_preset_as(name.strip())
+
+    def save_preset_as(self, name: str) -> bool:
+        try:
+            data = {"stage": self.protocol_panel.current_protocol_id(),
+                    "params": self.protocol_panel.collect_params(),
+                    "identity": self.run_control.identity()}
+        except ValueError as exc:
+            self.run_control.set_status(f"参数非法,未存预设:{exc}", error=True)
+            return False
+        presets.save_preset(self._presets_root, name, data)
+        self._refresh_presets()
+        self._preset_combo.setCurrentText(name)
+        self.run_control.set_status(f"已存预设:{name}")
+        return True
+
+    def _on_preset_load(self) -> None:
+        name = self._preset_combo.currentText().strip()
+        if name:
+            self.load_preset_named(name)
+
+    def load_preset_named(self, name: str) -> bool:
+        try:
+            data = presets.load_preset(self._presets_root, name)
+        except Exception as exc:  # noqa: BLE001
+            self.run_control.set_status(f"读预设失败:{exc}", error=True)
+            return False
+        stage = data.get("stage")
+        if stage and not self.protocol_panel.select_protocol(stage):
+            self.run_control.set_status(f"预设协议 {stage} 不存在", error=True)
+            return False
+        self.protocol_panel.param_form.apply_values(data.get("params", {}))
+        self.run_control.set_identity(data.get("identity", {}))
+        self.run_control.set_status(f"已加载预设:{name}")
+        return True
+
+    def _on_preset_delete(self) -> None:
+        name = self._preset_combo.currentText().strip()
+        if name and presets.delete_preset(self._presets_root, name):
+            self._refresh_presets()
+            self.run_control.set_status(f"已删预设:{name}")
 
     def _wiring_text(self) -> str:
         return f"接线 Gate={_GATE} · Drain={_DRAIN} · CH{_FORBIDDEN} 禁用(无 RSU)"

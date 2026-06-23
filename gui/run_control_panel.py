@@ -143,6 +143,12 @@ class RunControlPanel(QWidget):
     def identity(self) -> dict[str, str]:
         return {k: e.text().strip() for k, e in self._id_edits.items()}
 
+    def set_identity(self, identity: dict) -> None:
+        """从预设回填器件身份字段。"""
+        for k, e in self._id_edits.items():
+            if identity and k in identity and identity[k] is not None:
+                e.setText(str(identity[k]))
+
     def out_root(self) -> str:
         """输出根目录(空 = 用仓库默认 ROOT)。"""
         return self._out_root.text().strip()

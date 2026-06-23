@@ -66,6 +66,17 @@ class ProtocolPanel(QWidget):
     def collect_params(self) -> dict:
         return self.param_form.collect()
 
+    def select_protocol(self, pid: str) -> bool:
+        """按 id 选中协议(触发 set_protocol + protocolSelected),供预设加载用。"""
+        for i in range(self.tree.topLevelItemCount()):
+            grp = self.tree.topLevelItem(i)
+            for j in range(grp.childCount()):
+                ch = grp.child(j)
+                if ch.data(0, _ROLE_ID) == pid:
+                    self.tree.setCurrentItem(ch)
+                    return True
+        return False
+
     # ── 内部 ────────────────────────────────────────────────────────────────
     def _populate(self) -> None:
         # 按 group(按"测什么")分组,first-occurrence 顺序(=协议工作流顺序);group 空回退 family。

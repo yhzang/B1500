@@ -146,6 +146,35 @@ class ParamForm(QWidget):
             out[p.name] = self._read_widget(p, w)
         return out
 
+    def apply_values(self, values: dict) -> None:
+        """把一组 SI 口径的值灌进当前表单(预设加载用)。未知键忽略;LOCKED 跳过。"""
+        by_name = {p.name: (p, w) for p, w in self._fields}
+        for name, val in (values or {}).items():
+            pw = by_name.get(name)
+            if pw is None:
+                continue
+            p, w = pw
+            if p.visibility is Visibility.LOCKED:
+                continue
+            try:
+                self._set_widget_value(p, w, val)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _set_widget_value(self, p: ParamSpec, w: QWidget, val: Any) -> None:
+        if isinstance(w, QCheckBox):
+            w.setChecked(bool(val))
+        elif isinstance(w, QComboBox):
+            if val is not None:
+                w.setCurrentText(str(val))
+        elif isinstance(w, QSpinBox):
+            w.setValue(int(val))
+        elif isinstance(w, QDoubleSpinBox):
+            f = float(w.property("si_factor") or 1.0)
+            w.setValue(float(val) / f)
+        elif isinstance(w, QLineEdit):
+            w.setText("" if val is None else str(val))
+
     def is_valid(self) -> bool:
         """所有自由文本字段格式合法(空=用默认,算合法;但整数列表空算非法)。"""
         return not self._invalid
