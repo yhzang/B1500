@@ -71,20 +71,21 @@ from .specs import Visibility as V
 from .specs import Widget as W
 
 # 阶段码 → (人类标题, 物理量语义)。与设计 §7 协议卡片对齐。
+# (友好显示名, physics 标签, GUI 分组名)。代号(S0/E1…)是 key,不在此改;分组按"测什么"。
 _META = {
-    "S0": ("空夹具/抬针 smoke", "smoke"),
-    "S1": ("器件只读 baseline", "baseline"),
-    "E1": ("RAWD 写后延迟读", "retention"),
-    "E2": ("读扰动 minimal", "read-disturb"),
-    "E3W": ("脉宽扫描", "pulse-width"),
-    "E3A": ("幅值扫描", "amplitude"),
-    "E4": ("imprint 预偏压", "imprint"),
-    "E5": ("Vg×Vd 可视窗格", "visibility"),
-    "E6R": ("无扰动参考", "reference"),
-    "E6D": ("半Vdd 反极性扰动-延迟", "disturb-delay"),
-    "CYCLE": ("检查点耐久", "endurance"),
-    "MLC": ("多值编程幅值扫描", "multi-level"),
-    "ISPP": ("ISPP 增量步进编程(闭环)", "closed-loop"),
+    "S0": ("空夹具自检", "smoke", "自检 / 基线"),
+    "S1": ("器件基线读", "baseline", "自检 / 基线"),
+    "E1": ("写后延迟读 · 保持特性", "retention", "保持 retention"),
+    "E2": ("读扰动累积", "read-disturb", "扰动"),
+    "E3W": ("编程脉宽扫描 · 动力学", "pulse-width", "编程动力学"),
+    "E3A": ("编程幅值扫描 · 动力学", "amplitude", "编程动力学"),
+    "E4": ("预偏压印记 imprint", "imprint", "印记"),
+    "E5": ("Vg×Vd 记忆窗网格", "visibility", "记忆窗"),
+    "E6R": ("无扰动参考线", "reference", "扰动"),
+    "E6D": ("半选扰动 → 延迟读", "disturb-delay", "扰动"),
+    "CYCLE": ("耐久循环 · 检查点回读", "endurance", "耐久"),
+    "MLC": ("多值编程(幅值扫描)", "multi-level", "多值 / 闭环"),
+    "ISPP": ("闭环增量编程 write-verify", "closed-loop", "多值 / 闭环"),
 }
 
 
@@ -308,8 +309,8 @@ def _dcp(name, kind, default, *, label, unit="", vis=V.BASIC, widget=W.DOUBLE_SP
 
 
 _META_SMU = {
-    "DC_IDVG": ("DC 转移特性 Id-Vg(SMU)", "transfer"),
-    "DC_IDVD": ("DC 输出特性 Id-Vd(SMU)", "output"),
+    "DC_IDVG": ("转移特性 Id-Vg", "transfer", "直流 DC"),
+    "DC_IDVD": ("输出特性 Id-Vd", "output", "直流 DC"),
 }
 
 _DC_COMMON = (
@@ -344,7 +345,7 @@ _SMU_PARAMS = {
 def _build_registry() -> dict[str, ProtocolSpec]:
     registry: dict[str, ProtocolSpec] = {}
     for sid, sspec in STAGE_REGISTRY.items():
-        title, physics = _META.get(sid, (sid, ""))
+        title, physics, group = _META.get(sid, (sid, "", ""))
         registry[sid] = ProtocolSpec(
             id=sid,
             title=title,
@@ -353,13 +354,14 @@ def _build_registry() -> dict[str, ProtocolSpec]:
             description=sspec.description,
             params=_STAGE_PARAMS.get(sid, ()),
             csv_schema="fefet_fixedcols",
+            group=group,
             output_label=sspec.output_label,
             runner=sspec.runner,
         )
     # ── SMU(DC)族(增量6b):纯加法,WGFMU 循环一字不动 ──
     from ..protocols.smu_dc import SMU_STAGE_REGISTRY
     for sid, sspec in SMU_STAGE_REGISTRY.items():
-        title, physics = _META_SMU.get(sid, (sid, ""))
+        title, physics, group = _META_SMU.get(sid, (sid, "", ""))
         registry[sid] = ProtocolSpec(
             id=sid,
             title=title,
@@ -368,6 +370,7 @@ def _build_registry() -> dict[str, ProtocolSpec]:
             description=sspec.description,
             params=_SMU_PARAMS.get(sid, ()),
             csv_schema="dc",
+            group=group,
             output_label=sspec.output_label,
             runner=sspec.runner,
         )

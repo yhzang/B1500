@@ -41,6 +41,13 @@ def test_smu_dc_family_registered():
         assert callable(REGISTRY[sid].runner)
 
 
+def test_every_protocol_has_display_group_and_friendly_title():
+    # GUI 显示层:每个协议有"按测什么"的分组名 + 形象 title(代号仅作 key,不当显示主体)
+    for sid, spec in REGISTRY.items():
+        assert spec.group, f"{sid} 缺 group(GUI 分组名)"
+        assert spec.title and spec.title != sid, f"{sid} 应有形象 title,而非代号本身"
+
+
 def test_paramspec_name_matches_derived_cli_dest():
     for sid, p in _all_specs():
         if p.cli_flag is None:

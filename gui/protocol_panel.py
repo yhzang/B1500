@@ -68,21 +68,28 @@ class ProtocolPanel(QWidget):
 
     # ── 内部 ────────────────────────────────────────────────────────────────
     def _populate(self) -> None:
-        # 按 family 分组(泛化,不硬编码协议码)
-        by_family: dict[str, list] = {}
+        # 按 group(按"测什么")分组,first-occurrence 顺序(=协议工作流顺序);group 空回退 family。
+        # 叶子显示"形象名(代号)";tooltip 给完整说明。仍不硬编码任何协议码。
+        by_group: dict[str, list] = {}
+        order: list[str] = []
         for spec in REGISTRY.values():
-            by_family.setdefault(spec.family, []).append(spec)
-        for family in sorted(by_family):
-            group = QTreeWidgetItem([family])
-            group.setFirstColumnSpanned(True)
-            self.tree.addTopLevelItem(group)
-            for spec in by_family[family]:
-                leaf = QTreeWidgetItem([f"{spec.id}  {spec.title}"])
+            key = spec.group or spec.family
+            if key not in by_group:
+                by_group[key] = []
+                order.append(key)
+            by_group[key].append(spec)
+        for key in order:
+            grp = QTreeWidgetItem([key])
+            grp.setFirstColumnSpanned(True)
+            self.tree.addTopLevelItem(grp)
+            for spec in by_group[key]:
+                leaf = QTreeWidgetItem([f"{spec.title}  ({spec.id})"])
                 leaf.setData(0, _ROLE_ID, spec.id)
-                if spec.note:
-                    leaf.setToolTip(0, spec.note)
-                group.addChild(leaf)
-            group.setExpanded(True)
+                tip = spec.note or spec.description or ""
+                if tip:
+                    leaf.setToolTip(0, tip)
+                grp.addChild(leaf)
+            grp.setExpanded(True)
 
     def _on_item_changed(self, current: QTreeWidgetItem | None, _previous) -> None:
         if current is None:

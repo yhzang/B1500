@@ -309,6 +309,18 @@ def test_run_browser_panel_constructs_and_lists(tmp_path):
     assert len(p._entries) == 1
 
 
+def test_protocol_panel_groups_by_category():
+    """协议树按"测什么"分组(形象分组名),不再按 WGFMU/SMU 仪器分;叶子显示形象名。"""
+    _ensure_app()
+    from gui.protocol_panel import ProtocolPanel
+
+    p = ProtocolPanel()
+    tops = [p.tree.topLevelItem(i).text(0) for i in range(p.tree.topLevelItemCount())]
+    assert "自检 / 基线" in tops
+    assert "直流 DC" in tops
+    assert "WGFMU" not in tops and "SMU" not in tops  # 不再以仪器族当分组
+
+
 def test_run_browser_scans_dc_run(tmp_path):
     """增量6b:DC dry 跑完落四级目录 + manifest,RunBrowser scan_runs 扫得到、stage=DC_IDVG。"""
     pytest.importorskip("pyqtgraph")

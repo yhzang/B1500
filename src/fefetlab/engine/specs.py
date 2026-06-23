@@ -105,6 +105,7 @@ class ProtocolSpec:
     params: tuple[ParamSpec, ...]
     stop_gate: Any = None           # orchestration.core.StopGatePolicy | None(避免在纯数据层导入)
     csv_schema: str = "fefet_fixedcols"  # "fefet_fixedcols"(FIELDNAMES)/"dc"/"iv_sweep"/"wakeup_cycles"
+    group: str = ""                 # GUI 协议树分组名(按"测什么":自检/保持/动力学/扰动…);空=回退 family
     requires: tuple[str, ...] = ()  # 门禁链:期望已完成的上游 report_code
     family_defaults: dict = field(default_factory=dict)  # {"pFeFET":{...},"nFeFET":{...}} 仅差异项
     plot_hints: tuple[PlotHint, ...] = ()
