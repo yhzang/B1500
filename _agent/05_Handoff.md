@@ -5,6 +5,31 @@
 
 ---
 
+## 2026-06-23 (2) → 需求vs现状深审 + 可视化/参数/预设大改 + 全绿 150(⭐新会话从这接)
+
+**椰椰反馈**:GUI 还简陋;重分析项目4 测量需求 vs 现状(参数/导出/log/bug/真实下发),并参考本机 EasyEXPERT。
+
+**本轮做了(全部 scp 测试机 + pytest 绿,150 passed)**:
+- **深度分析**:项目4 **R1–R14** 测量需求清单(E1S retention/rich-read Id-Vg/E6S/E6M/DC/Toff 扫描/50µs 读窗/前置脉冲极性/PGM 读扰/温度×3/S1 基线)+ GUI 可视化/参数/live 三路审计(本会话 workflow 输出)。
+- **参考 EasyEXPERT**:本机 `C:\Program Files (x86)\Agilent\B1500`(桌面授权超时,改读安装结构+知识)。吸收:每轴 log/线性一等控件、导出、Graph+List 双视图、命名预设、Append 叠加。
+- **可视化(plot_panel)**:加 保存图片(PNG/SVG)+导出CSV;**按 schema 智能默认 log 轴**(fefet delay→logX,DC |Id|→logY);新增**数据表 List 视图**。
+- **参数 bug 修(param_form)**:① FLOAT 小数位/步长按量级自适应(修极小 s 值被 6 位小数静默清零);② **电压参数夹到 ±10V** + nullable 电压>10V 判非法(防误填烧器件);③ INT_LIST(检查点)拒空/拒非正;④ collect 遇非法字段直接抛。
+- **命名预设(presets.py)**:类 EasyEXPERT Favorite Setup,存/取命名参数集到 `configs/presets/*.json`(UTF-8 无 BOM);ParamForm.apply_values/select_protocol/set_identity;app 预设工具条。
+- **RunBrowser**:导出图 + **回流项目4**(复制 CSV/manifest,读 utf-8-sig 吃 BOM、写 utf-8 无 BOM)。
+- **DC live 友好守卫**:选 DC+live 弹"未接真机后端,仅 dry"(不抛栈)。
+
+**真实下发诚实结论**:**WGFMU live 真能下发**(RealWgfmuBackend 真 ctypes 调 wgfmu.dll execute,代码就绪待真机环境:DLL/VISA/接线 201/202);**DC/SMU live = NotImplementedError 仅 dry**;安全门 confirm==stage 真拦。
+
+**测试**:本轮 +15(viz4+param6+preset3+rbexport2);`pytest tests/` **150 passed**;金标准 169/640 不破。commit 到 `6b2c694`(未 push)。
+
+**⚠️ 仓库在被并行开发**:co-dev 提了 `d23dee0`(friendly names + group by"测什么")+ `1d00615`(no-code DSL Project5 M2);`ProtocolSpec.group` 已存在,我的代码/测试已兼容。**改 engine 共享文件(registry/wgfmu_fefet)前先 re-read 防冲突;本轮我只动 gui/。**
+
+**剩余建议(未做)**:① randomize_delays 提升为可见 ADVANCED 开关(需动 registry+wgfmu_fefet,与 co-dev 协调);② R9 长延迟秒-分钟级自动定时+触发(项目4 02_Plan 点过);③ DC live 真机后端;④ 主结果图多 run 叠加。
+
+**椰椰待办**:测试机桌面双击 `run_gui.bat` 看界面;`git push`。
+
+---
+
 ## 2026-06-23 → GUI 上位机"完整化"收口 + 全绿 131 + 可回退安全网(⭐新会话从这接)
 
 **椰椰目标**:把测试机代码备份成可回退,然后把在建 GUI 改成"完整可用上位机,参考 EasyEXPERT,专属 FeFET,保留其他存储器预留位",测试确保功能全部正常再停。
