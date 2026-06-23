@@ -13,7 +13,8 @@
 - **注册**：registry 加单写族 ParamSpec（read_vg 双读点 / delays / checkpoints / disturb_amp / interval_s / write_state / rich_read / 各 ig_stop；cli_flag=None，跳过 argparse 比对）+ 进 REGISTRY（family=WGFMU，按"保持/扰动"分组）。
 - **绘图**：E6M=Id vs n_disturb（`fefet_disturb_accum`）、E6S=Id vs 扰后延迟（`fefet_disturb_single`）、E1S=Id vs delay。
 - **测试**：`pytest tests/` **162 passed**；金标准 ALL_DRY 169/640 byte-identical 不破；`--selftest` exit 0。已 push（HEAD 8135d60）。
-- **缺口（未做，非阻塞）**：运行队列/批处理、整套实验预设 v2、器件死亡台账、GUI rest-s 静置门、换器件必补 S1 护栏、复跑载参数——让"一清单连跑"更顺，但单条实验已能"选协议→填参数→跑"。**live 真机待现场验证**（WGFMU live 代码就绪；DC live=NotImplementedError）。
+- **缺口（未做，非阻塞）**：运行队列/批处理、整套实验预设 v2、GUI rest-s 静置门、换器件必补 S1 护栏、复跑载参数——让"一清单连跑"更顺，但单条实验已能"选协议→填参数→跑"。**live 真机待现场验证**（WGFMU live 代码就绪；DC live=NotImplementedError）。
+  > 注：**器件死亡 = 排程约束、非研究对象**（椰椰纪律 #1）。死亡时间顺手记台账即可，**不另做"死亡台账"功能、不再展开**。
 
 **⚠️ 项目4 口径校正（同日，跨项目）**：开题报告"第三次"（2026-06-12 定题「面向铪基 FeFET 阵列的**读写干扰**表征及建模」）把 **"读出投影"→"读出干扰"（read disturb）**、读出层、−1V/−0.5V-first、温度=后续判别维度（非主线）。已更项目4 `_agent`。**写对外文本/与椰椰讨论物理用"读出干扰"，不用"读出投影"。**
 
