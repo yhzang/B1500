@@ -359,6 +359,14 @@ class MainWindow(QMainWindow):
             return
         if mx > 0.0:
             self.run_control.update_safety(mx * 1e6)  # A → µA
+        # 软判定(live,只提示不拦):主读点疑似击穿/窗塌即时着色(发 on_shot 的段才有)
+        try:
+            from .health import assess
+            v = assess(rows or [], **self.run_control.health_thresholds())
+            if v["status"] in ("breakdown", "collapse"):
+                self.run_control.set_health(v["label"], status=v["status"])
+        except Exception:  # noqa: BLE001
+            pass
 
     def _on_stage_done(self, summary, run_dir) -> None:
         code = getattr(summary, "report_code", "")
@@ -369,6 +377,24 @@ class MainWindow(QMainWindow):
             ig = getattr(summary, "max_abs_ig_a", None)
             if ig is not None:
                 self.run_control.update_safety(abs(float(ig)) * 1e6)
+        except Exception:  # noqa: BLE001
+            pass
+        # 软器件判定(只提示 + 记录,从不拦):读本 run 的 CSV 看 击穿/窗塌/未导通,
+        # 着色显示 + 写进 run_log(在落盘之前 append,故会被记录);阈值取面板可改值。
+        try:
+            out_csv = getattr(summary, "out_csv", None)
+            if out_csv is not None:
+                import pandas as pd
+
+                from .health import assess
+                rows = pd.read_csv(out_csv).to_dict("records")
+                v = assess(rows, **self.run_control.health_thresholds())
+                self.run_control.set_health(v["label"], status=v["status"])
+                if v["status"] not in ("ok", "no_data"):
+                    lvl = "STOP" if v["status"] in ("breakdown", "collapse") else "WARN"
+                    self.log_panel.append(
+                        lvl, f"HEALTH_{v['status'].upper()}",
+                        f"{v['label']}(min|Id|={v['min_id_a']:.2e}A, max|Ig|={v['max_ig_a']:.2e}A)")
         except Exception:  # noqa: BLE001
             pass
         # run_log.txt 落盘(UTF-8 无 BOM;设计 §6.4):整段日志缓冲写进本 run 目录

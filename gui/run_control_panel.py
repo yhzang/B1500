@@ -13,6 +13,7 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -112,6 +113,23 @@ class RunControlPanel(QWidget):
         sb_form.addRow(self._pf_chan)
         sb_form.addRow(self._pf_302)
         sb_form.addRow(self._safety)
+        # ── 软器件判定(只提示 + 记录,从不拦;阈值默认可改)──
+        self._cond_uA = QDoubleSpinBox()
+        self._cond_uA.setRange(0.0, 1000.0)
+        self._cond_uA.setDecimals(2)
+        self._cond_uA.setValue(5.0)
+        self._cond_uA.setSuffix(" µA")
+        self._cond_uA.setToolTip("主读点 |Id| ≥ 此值才算导通(S1 体检参考);只提示不拦")
+        self._collapse_k = QDoubleSpinBox()
+        self._collapse_k.setRange(0.0, 100.0)
+        self._collapse_k.setDecimals(1)
+        self._collapse_k.setValue(3.0)
+        self._collapse_k.setSuffix(" ×σ")
+        self._collapse_k.setToolTip("|Id| < k×Id_std(信号没过噪声)且 Ig 健康 → 疑似窗塌;只提示不拦")
+        sb_form.addRow(QLabel("导通阈 |Id|≥"), self._cond_uA)
+        sb_form.addRow(QLabel("窗塌阈 |Id|<"), self._collapse_k)
+        self._health = QLabel("器件判定:—")
+        sb_form.addRow(self._health)
 
         # ── 运行控制 ──
         self.btn_run = QPushButton("▶ 运行")
@@ -193,10 +211,27 @@ class RunControlPanel(QWidget):
         self.status.setStyleSheet("color:#B80000;" if error else "")
 
     def reset_safety(self) -> None:
-        """新一轮运行前清空 max|Ig| 指标。"""
+        """新一轮运行前清空 max|Ig| 指标 + 器件判定。"""
         self._max_ig_uA = 0.0
         self._safety.setText("本轮 max|Ig|: -- µA")
         self._safety.setStyleSheet("")
+        self._health.setText("器件判定:—")
+        self._health.setStyleSheet("")
+
+    def health_thresholds(self) -> dict:
+        """软判定阈值(默认 5µA / 3×σ,用户可改):导通 |Id|≥µA、窗塌 |Id|<k×Id_std。"""
+        return {"conduction_uA": float(self._cond_uA.value()),
+                "collapse_k": float(self._collapse_k.value())}
+
+    def set_health(self, label: str, *, status: str = "ok") -> None:
+        """显示器件软判定(只提示,从不拦)。status 决定着色。"""
+        self._health.setText(f"器件判定:{label}")
+        if status in ("collapse", "breakdown"):
+            self._health.setStyleSheet("color:#B80000;font-weight:bold;")
+        elif status == "low_id":
+            self._health.setStyleSheet("color:#B8860B;font-weight:bold;")
+        else:
+            self._health.setStyleSheet("color:#2E7D32;")
 
     def update_safety(self, ig_uA: float) -> None:
         """收到更高的 |Ig|(µA)时更新指标 + 着色(经验:≥20µA 偏高,标红)。"""
