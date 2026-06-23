@@ -45,6 +45,13 @@ _FORBIDDEN = 302
 _ORG = "fefetlab"
 _APPNAME = "B1500GUI"
 
+# 写/读分类(仅供写前导通提示用)。协议的权威来源是 REGISTRY(见 registry.py);
+# 这里是"只读类"的显式名单——新增只读协议记得加进来。默认当写类是有意的"安全侧":
+# 漏判只会对一颗器件多弹一次可关的软提示,绝不会漏掉真正的写。
+_READ_ONLY_STAGES = {"S0", "S1", "DC_IDVG", "DC_IDVD"}
+# 单写族(每颗只写一次,首写律):提示文案用"白费这一炮";多写族可重写,文案中性。
+_SINGLE_WRITE_STAGES = {"E1S", "E6S", "E6M"}
+
 
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -60,6 +67,10 @@ class MainWindow(QMainWindow):
 
         self._last_stage: str | None = None
         self._last_live: bool = False
+        self._last_health_status: str | None = None   # 上次读出的器件软判定(供写前提示)
+        self._last_health_device: str = ""
+        self._warn_no_conduction: bool = bool(
+            QSettings(_ORG, _APPNAME).value("health/warn_no_conduction", True, type=bool))
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self.protocol_panel)
@@ -125,6 +136,11 @@ class MainWindow(QMainWindow):
         act_wiring = QAction("接线档案 / 通道…", self)
         act_wiring.triggered.connect(self._on_show_wiring)
         m_dev.addAction(act_wiring)
+        self.act_warn_cond = QAction("写前导通提示(无导通时确认)", self)
+        self.act_warn_cond.setCheckable(True)
+        self.act_warn_cond.setChecked(self._warn_no_conduction)
+        self.act_warn_cond.toggled.connect(self._set_warn_no_conduction)
+        m_dev.addAction(self.act_warn_cond)
 
         m_help = mb.addMenu("帮助(&H)")
         act_about = QAction("关于", self)
@@ -319,6 +335,10 @@ class MainWindow(QMainWindow):
                                     "DC/SMU 协议的 live 真机后端尚未接入(目前仅 dry 可用)。\n"
                                     "请切回 dry-run,或改用 WGFMU 协议做 live。")
                 return
+        # 写前软提示:本器件上次读出没见导通时确认一次(可勾"不再提示");从不强制
+        if not self._confirm_write_if_no_conduction(stage):
+            self.run_control.set_status("已取消(写前确认)")
+            return
         try:
             params = self.protocol_panel.collect_params()
         except ValueError as exc:
@@ -390,6 +410,8 @@ class MainWindow(QMainWindow):
                 rows = pd.read_csv(out_csv).to_dict("records")
                 v = assess(rows, **self.run_control.health_thresholds())
                 self.run_control.set_health(v["label"], status=v["status"])
+                self._last_health_status = v["status"]
+                self._last_health_device = self.run_control.identity().get("device_id", "")
                 if v["status"] not in ("ok", "no_data"):
                     lvl = "STOP" if v["status"] in ("breakdown", "collapse") else "WARN"
                     self.log_panel.append(
@@ -420,6 +442,60 @@ class MainWindow(QMainWindow):
     def _on_error(self, exc, recoverable: bool) -> None:
         self.log_panel.append("ERROR", type(exc).__name__, str(exc))
         self.run_control.set_status(f"错误:{exc}", error=True)
+
+    # ── 写前导通软提示(从不强制;可勾"不再提示",可在 设备菜单 重新打开)──────────
+    def _should_warn_no_conduction(self, stage: str) -> bool:
+        """是否该弹写前确认:开关开 + 写类协议 + 本器件上次读出没见导通。"""
+        if not self._warn_no_conduction:
+            return False
+        if stage in _READ_ONLY_STAGES:
+            return False
+        # 只对"读到了但 Id 偏小 = 没见导通"提示;no_data(没读到有效数据)≠没导通,
+        # 不在写前再硬断言一次,交给 S1 当场横幅去判
+        if self._last_health_status != "low_id":
+            return False
+        # 判定必须属于当前这颗器件,否则别拿别人的旧结论吓人
+        return self.run_control.identity().get("device_id", "") == self._last_health_device
+
+    def _set_warn_no_conduction(self, on: bool) -> None:
+        """开/关写前导通提示(持久化 + 同步菜单勾选)。"""
+        on = bool(on)
+        self._warn_no_conduction = on
+        QSettings(_ORG, _APPNAME).setValue("health/warn_no_conduction", on)
+        act = getattr(self, "act_warn_cond", None)
+        if act is not None and act.isChecked() != on:
+            act.setChecked(on)
+
+    def _write_warn_text(self, stage: str) -> str:
+        """写前提示副文案:单写族强调"白费一炮",多写族中性提醒(可重写)。"""
+        if stage in _SINGLE_WRITE_STAGES:
+            return "单写器件每颗只写一次,写到没导通的器件会白费这一炮。"
+        return "此颗上次没见导通;多写协议可重写,这里仅作提醒,确认即继续写。"
+
+    def _confirm_write_if_no_conduction(self, stage: str) -> bool:
+        """写类协议且本器件上次没见导通时,弹一次确认。返回 False=用户取消(不写)。
+
+        勾选"本机不再提示"会持久关掉本提示(设备菜单可重新打开)。**从不强制**——
+        默认就是让你确认后照写,只是别白费单写器件的那一炮。
+        """
+        if not self._should_warn_no_conduction(stage):
+            return True
+        from PySide6.QtWidgets import QCheckBox
+
+        dev = self.run_control.identity().get("device_id", "")
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Warning)
+        box.setWindowTitle("写前确认")
+        box.setText(f"器件「{dev}」上次读出没见导通(Id 偏小)。\n仍要写入 {stage} 吗?")
+        box.setInformativeText(self._write_warn_text(stage))
+        btn_go = box.addButton("继续写入", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("取消", QMessageBox.ButtonRole.RejectRole)
+        chk = QCheckBox("本机不再提示")
+        box.setCheckBox(chk)
+        box.exec()
+        if chk.isChecked():
+            self._set_warn_no_conduction(False)
+        return box.clickedButton() is btn_go
 
 
 def main(argv: list[str] | None = None) -> int:
