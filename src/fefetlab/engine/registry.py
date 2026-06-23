@@ -374,6 +374,10 @@ def _build_registry() -> dict[str, ProtocolSpec]:
             output_label=sspec.output_label,
             runner=sspec.runner,
         )
+    # ── 声明式自定义协议(项目5 M2 DSL,纯加法、family=CUSTOM 隔离,绝不碰 golden)──
+    from ..protocols.declared.registry_glue import build_declared_specs
+    for sid, pspec in build_declared_specs().items():
+        registry[sid] = pspec
     return registry
 
 

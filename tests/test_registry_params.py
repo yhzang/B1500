@@ -26,11 +26,12 @@ def _all_specs():
 
 
 SMU_STAGES = ["DC_IDVG", "DC_IDVD"]  # 增量6b:SMU 族(cli_flag=None,不进 WGFMU argparse 比对)
+CUSTOM_STAGES = ["DEMO_RET"]          # DSL:声明式自定义协议(family=CUSTOM,独立隔离)
 
 
 def test_registry_covers_eleven_stages_each_nonempty():
-    assert set(REGISTRY) == set(STAGES) | set(SMU_STAGES)
-    for sid in STAGES + SMU_STAGES:
+    assert set(REGISTRY) == set(STAGES) | set(SMU_STAGES) | set(CUSTOM_STAGES)
+    for sid in STAGES + SMU_STAGES + CUSTOM_STAGES:
         assert REGISTRY[sid].params, f"{sid} 的 params 为空"
 
 
