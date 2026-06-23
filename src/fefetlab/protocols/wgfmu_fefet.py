@@ -1042,7 +1042,8 @@ def run_stage_e3_width(backend, args, *, callbacks=None) -> StageSummary:
     combos = [(s, tw) for s in ["ERS", "PGM"] for tw in _parse_float_list_ordered(args.e3_widths)]
     for rep in range(args.e3_reps):
         order = list(combos)
-        rng.shuffle(order)
+        if getattr(args, "randomize_delays", True):
+            rng.shuffle(order)
         for state, tw in order:
             v_w = V_ERS if state == "ERS" else V_PGM
             rr = run_e1_shot(backend, state=state, delay_s=args.e3_delay_s,
@@ -1076,7 +1077,8 @@ def run_stage_e3_amp(backend, args, *, callbacks=None) -> StageSummary:
     combos = [(s, a) for s in ["ERS", "PGM"] for a in _parse_float_list_ordered(args.e3_amps)]
     for rep in range(args.e3_reps):
         order = list(combos)
-        rng.shuffle(order)
+        if getattr(args, "randomize_delays", True):
+            rng.shuffle(order)
         for state, amp in order:
             v_w = +amp if state == "ERS" else -amp
             rr = run_e1_shot(backend, state=state, delay_s=args.e3_delay_s,
@@ -1158,7 +1160,8 @@ def run_stage_e4(backend, args, *, callbacks=None) -> StageSummary:
               for ps in _parse_float_list_ordered(args.e4_prebias_s)]
     for rep in range(args.e4_reps):
         order = list(combos)
-        rng.shuffle(order)
+        if getattr(args, "randomize_delays", True):
+            rng.shuffle(order)
         for state, pv, ps in order:
             rr = run_e4_shot(backend, state=state, prebias_v=pv, prebias_s=ps,
                              post_delay_s=args.e4_post_delay_s, vg_reads=vg_reads)
@@ -1195,7 +1198,8 @@ def run_stage_e5(backend, args, *, callbacks=None) -> StageSummary:
                 combos.append((state, vd, delay_s))
     for rep in range(args.e5_reps):
         order = list(combos)
-        rng.shuffle(order)
+        if getattr(args, "randomize_delays", True):
+            rng.shuffle(order)
         for state, vd, delay_s in order:
             rr = run_e1_shot(backend, state=state, delay_s=delay_s,
                              vg_reads=_parse_float_list_ordered(args.vg_e5), vd_read=vd, n_pts=N_PTS,

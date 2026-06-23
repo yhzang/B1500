@@ -148,6 +148,9 @@ COMMON = (
        help="读取时 Drain 电压;None=协议标称 0.05 V"),
     _p("seed", K.INT, 20260522, label="随机种子", vis=V.ADVANCED, widget=W.SPINBOX,
        help="延迟随机化种子,复现用"),
+    _p("randomize_delays", K.BOOL, True, label="随机化延迟/顺序", vis=V.ADVANCED,
+       widget=W.CHECKBOX,
+       help="True=随机化各扫描的延迟/组合顺序(默认,抗顺序偏置);关掉=按写定顺序跑,可复现调试"),
     _p("live", K.BOOL, False, label="联机(真机)", vis=V.ADVANCED, widget=W.CHECKBOX,
        help="True=驱动真机(须一段一确认);False=dry 审计"),
     # 读窗参数(增量4):提升为可调,所有协议共有(configure_channel_map 注入运行时全局)
