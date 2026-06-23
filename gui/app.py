@@ -84,6 +84,16 @@ class MainWindow(QMainWindow):
         self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, log_dock)
         self.log_dock = log_dock
 
+        from .scheduler import SchedulePanel
+
+        self.schedule_panel = SchedulePanel()
+        sched_dock = QDockWidget("自动定时序列(R9)", self)
+        sched_dock.setObjectName("schedule_dock")
+        sched_dock.setWidget(self.schedule_panel)
+        sched_dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea | Qt.DockWidgetArea.LeftDockWidgetArea)
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, sched_dock)
+        self.schedule_dock = sched_dock
+
         self._presets_root = Path(__file__).resolve().parents[1]
         self._build_menu()
         self._build_toolbar()
@@ -252,6 +262,7 @@ class MainWindow(QMainWindow):
         self.run_control.runClicked.connect(self._on_run)
         self.run_control.stopClicked.connect(self.controller.stop)
         self.protocol_panel.protocolSelected.connect(self._on_protocol_selected)
+        self.schedule_panel.triggerMeasurement.connect(self._on_timed_trigger)
 
         c = self.controller
         c.logMsg.connect(self.log_panel.append)
@@ -278,6 +289,15 @@ class MainWindow(QMainWindow):
     def _on_run_finished(self) -> None:
         self.run_control.set_running(False)
         self.protocol_panel.setEnabled(True)
+
+    def _on_timed_trigger(self, index: int, requested_delay_s: float) -> None:
+        """自动定时序列(R9)到点:跑一次当前协议(忙则跳过本点)。"""
+        if self.controller.is_busy():
+            self.log_panel.append("WARN", "TIMED", f"第{index + 1}点到点但上一测未完,跳过")
+            return
+        self.log_panel.append("INFO", "TIMED",
+                              f"定时触发第{index + 1}点(目标 {requested_delay_s:g}s)")
+        self._on_run()
 
     # ── 运行 ──────────────────────────────────────────────────────────────
     def _on_run(self) -> None:
