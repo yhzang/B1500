@@ -50,6 +50,7 @@ class RunControlPanel(QWidget):
 
     runClicked = Signal()
     stopClicked = Signal()
+    previewClicked = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -84,7 +85,7 @@ class RunControlPanel(QWidget):
         # ── 模式 ──
         self._mode_box = QGroupBox("模式")
         mode_lay = QVBoxLayout(self._mode_box)
-        self.rb_dry = QRadioButton("dry-run(默认,无 VISA / 无 DLL / 占位电流)")
+        self.rb_dry = QRadioButton("预演 / Plan(默认,不接仪器:时序预览 + 占位数据)")
         self.rb_live = QRadioButton("live(真机,一段一确认)")
         self.rb_dry.setChecked(True)
         self.rb_dry.toggled.connect(self._on_mode_toggled)
@@ -135,9 +136,13 @@ class RunControlPanel(QWidget):
         self.btn_run = QPushButton("▶ 运行")
         self.btn_stop = QPushButton("■ 停止")
         self.btn_stop.setEnabled(False)
+        self.btn_preview = QPushButton("时序预览")
+        self.btn_preview.setToolTip("Plan:dry build 出真实波形,先看沿/写/读点/delay/向量数,再决定是否 live")
         self.btn_run.clicked.connect(self.runClicked)
         self.btn_stop.clicked.connect(self.stopClicked)
+        self.btn_preview.clicked.connect(self.previewClicked)
         btn_lay = QHBoxLayout()
+        btn_lay.addWidget(self.btn_preview)
         btn_lay.addWidget(self.btn_run)
         btn_lay.addWidget(self.btn_stop)
 
@@ -186,6 +191,7 @@ class RunControlPanel(QWidget):
     def set_running(self, running: bool) -> None:
         self.btn_run.setEnabled(not running)
         self.btn_stop.setEnabled(running)
+        self.btn_preview.setEnabled(not running)
         self.progress.setVisible(running)
         if running:
             self.progress.setRange(0, 0)  # 每次开跑先回到 busy(不确定总数)

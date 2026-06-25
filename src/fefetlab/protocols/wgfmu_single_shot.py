@@ -427,7 +427,7 @@ def _check_ig(rows, stage, threshold_uA):
 
 def run_stage_e6s(backend, args, *, callbacks=None):
     ctx = ExperimentContext(
-        root=base.ROOT, device_id=args.device_id, geometry=args.geometry,
+        root=Path(getattr(args, "out_root", "") or base.ROOT), device_id=args.device_id, geometry=args.geometry,
         live=args.live, seed=args.seed,
     )
     out_dir = make_stage_dir(ctx, STAGE_LABEL)
@@ -648,7 +648,7 @@ def run_stage_e6m(backend, args, *, callbacks=None):
     intervals should suppress accumulation.
     """
     ctx = ExperimentContext(
-        root=base.ROOT, device_id=args.device_id, geometry=args.geometry,
+        root=Path(getattr(args, "out_root", "") or base.ROOT), device_id=args.device_id, geometry=args.geometry,
         live=args.live, seed=args.seed,
     )
     out_dir = make_stage_dir(ctx, E6M_STAGE_LABEL)
@@ -846,7 +846,7 @@ def run_stage_e1s(backend, args, *, callbacks=None):
     Id(ERS) - Id(PGM) at the main read point, computed in post-processing/plots.
     """
     ctx = ExperimentContext(
-        root=base.ROOT, device_id=args.device_id, geometry=args.geometry,
+        root=Path(getattr(args, "out_root", "") or base.ROOT), device_id=args.device_id, geometry=args.geometry,
         live=args.live, seed=args.seed,
     )
     out_dir = make_stage_dir(ctx, E1S_STAGE_LABEL)

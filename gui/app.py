@@ -277,6 +277,7 @@ class MainWindow(QMainWindow):
     def _wire(self) -> None:
         self.run_control.runClicked.connect(self._on_run)
         self.run_control.stopClicked.connect(self.controller.stop)
+        self.run_control.previewClicked.connect(self._on_preview)
         self.protocol_panel.protocolSelected.connect(self._on_protocol_selected)
         self.schedule_panel.triggerMeasurement.connect(self._on_timed_trigger)
 
@@ -362,8 +363,31 @@ class MainWindow(QMainWindow):
         except Exception:  # noqa: BLE001
             schema = ""
         self.plot_panel.begin_live_plot(schema, live=live)
-        self.run_control.set_status(f"运行中:{stage}（{'live' if live else 'dry'}）")
+        self.run_control.set_status(f"运行中:{stage}（{'live' if live else '预演/plan'}）")
         self.log_panel.append("INFO", "SUBMIT", f"提交 {stage}")
+
+    def _on_preview(self) -> None:
+        """时序预览(Plan):dry build 出真实波形,弹对话框展示 沿/写/读点/delay/向量数。"""
+        stage = self.protocol_panel.current_protocol_id()
+        if not stage:
+            self.run_control.set_status("请先在左侧选择一个协议", error=True)
+            return
+        try:
+            params = self.protocol_panel.collect_params()
+        except ValueError as exc:
+            self.run_control.set_status(f"参数解析失败:{exc}", error=True)
+            return
+        params.update(self.run_control.identity())
+        from .plan_preview import build_timing_preview
+
+        r = build_timing_preview(stage, params)
+        if not r.get("ok"):
+            self.run_control.set_status(f"时序预览失败:{r.get('error')}", error=True)
+            return
+        from .timing_preview_dialog import TimingPreviewDialog
+
+        TimingPreviewDialog(r, self).exec()
+        self.run_control.set_status(f"时序预览:{stage}")
 
     # ── 引擎事件 ──────────────────────────────────────────────────────────
     def _on_shot(self, stage: str, seq: int, rows) -> None:
