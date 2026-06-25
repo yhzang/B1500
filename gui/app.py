@@ -9,7 +9,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QSettings, Qt, QThread, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
@@ -51,6 +51,21 @@ _APPNAME = "B1500GUI"
 _READ_ONLY_STAGES = {"S0", "S1", "DC_IDVG", "DC_IDVD"}
 # 单写族(每颗只写一次,首写律):提示文案用"白费这一炮";多写族可重写,文案中性。
 _SINGLE_WRITE_STAGES = {"E1S", "E6S", "E6M"}
+
+
+class _PreviewWorker(QThread):
+    """后台线程跑 build_timing_preview——高 N 预览会 build 全部分块,别卡主线程。"""
+
+    done = Signal(dict)
+
+    def __init__(self, stage: str, params: dict, parent=None) -> None:
+        super().__init__(parent)
+        self._stage = stage
+        self._params = params
+
+    def run(self) -> None:
+        from .plan_preview import build_timing_preview
+        self.done.emit(build_timing_preview(self._stage, self._params))
 
 
 class MainWindow(QMainWindow):
@@ -367,7 +382,7 @@ class MainWindow(QMainWindow):
         self.log_panel.append("INFO", "SUBMIT", f"提交 {stage}")
 
     def _on_preview(self) -> None:
-        """时序预览(Plan):dry build 出真实波形,弹对话框展示 沿/写/读点/delay/向量数。"""
+        """时序预览(Plan):后台 dry build 出真实波形,完成后弹对话框(沿/写/读点/delay/向量数)。"""
         stage = self.protocol_panel.current_protocol_id()
         if not stage:
             self.run_control.set_status("请先在左侧选择一个协议", error=True)
@@ -378,16 +393,22 @@ class MainWindow(QMainWindow):
             self.run_control.set_status(f"参数解析失败:{exc}", error=True)
             return
         params.update(self.run_control.identity())
-        from .plan_preview import build_timing_preview
+        self.run_control.set_status(f"预览生成中:{stage} …")
+        self.run_control.btn_preview.setEnabled(False)
+        self._preview_worker = _PreviewWorker(stage, params, self)   # 持引用,免 GC
+        self._preview_worker.done.connect(self._on_preview_done)
+        self._preview_worker.start()
 
-        r = build_timing_preview(stage, params)
+    def _on_preview_done(self, r: dict) -> None:
+        """预览线程返回:出错则提示,成功则弹时序预览对话框。"""
+        self.run_control.btn_preview.setEnabled(True)
         if not r.get("ok"):
             self.run_control.set_status(f"时序预览失败:{r.get('error')}", error=True)
             return
         from .timing_preview_dialog import TimingPreviewDialog
 
         TimingPreviewDialog(r, self).exec()
-        self.run_control.set_status(f"时序预览:{stage}")
+        self.run_control.set_status(f"时序预览:{r.get('summary', {}).get('stage', '')}")
 
     # ── 引擎事件 ──────────────────────────────────────────────────────────
     def _on_shot(self, stage: str, seq: int, rows) -> None:

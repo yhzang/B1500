@@ -3,7 +3,8 @@
 
 不是重新推导参数,而是用**协议自己的 build**——经 AuditBackend 记录的
 create_pattern / add_vector / set_measure_event——所以预览的这条波形 =
-live 时会真正下发的同一条(首写律:抓第一次 execute 的那一炮)。
+live 时会真正下发的同一条。dry 跑一遍、记录每次 execute 的各段波形,再挑
+"含读窗最多"的那段当时间线代表(E1S/E6S 一段;E6M 取某个 checkpoint 读段)。
 
 `build_timing_preview` 从不抛异常:失败回 {"ok": False, "error": ...}。
 """
@@ -60,7 +61,11 @@ def _timeline(pattern: dict) -> list[tuple[float, float, float]]:
 
 
 def build_timing_preview(stage: str, params: dict | None = None) -> dict:
-    """dry 跑一遍抓第一炮波形,抽时序摘要 + 时间线。**从不抛异常。**"""
+    """dry 跑一遍,抓协议 build 的各段波形,抽时序摘要 + 时间线(挑含读窗最多的段当代表)。
+
+    **从不抛异常**:失败回 {"ok": False, "error": ...}。可能较慢(高 N E6M 会 build 全部分块),
+    调用方(GUI)宜放后台线程,别卡主线程。
+    """
     if stage not in REGISTRY:
         return {"ok": False, "error": f"未知协议 {stage}"}
     p = default_params_for(stage)

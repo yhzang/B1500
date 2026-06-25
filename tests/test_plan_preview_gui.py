@@ -34,13 +34,21 @@ def test_mainwindow_preview_no_protocol_guard(qapp):
     assert "协议" in win.run_control.status.text()
 
 
-def test_mainwindow_preview_failure_sets_status(qapp, monkeypatch):
-    import gui.plan_preview as pp
+def test_preview_done_failure_sets_status(qapp):
     from gui.app import MainWindow
 
     win = MainWindow()
-    win.protocol_panel.select_protocol("E6S")     # 选上协议,越过早退守卫
-    # build 失败时设错误状态、不弹 modal(exec 会阻塞测试)
-    monkeypatch.setattr(pp, "build_timing_preview", lambda *a, **k: {"ok": False, "error": "TESTFAIL"})
-    win._on_preview()
+    win.run_control.btn_preview.setEnabled(False)         # 模拟生成中
+    win._on_preview_done({"ok": False, "error": "TESTFAIL"})
     assert "失败" in win.run_control.status.text()
+    assert win.run_control.btn_preview.isEnabled()        # 完成后按钮恢复
+
+
+def test_preview_worker_emits_result(qapp):
+    from gui.app import _PreviewWorker
+
+    got: list = []
+    w = _PreviewWorker("E6S", {})
+    w.done.connect(got.append)
+    w.run()                                               # 同步跑(不 start),验证 emit
+    assert got and got[0]["ok"]
