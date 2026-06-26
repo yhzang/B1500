@@ -40,8 +40,21 @@ class _CaptureBackend(AuditBackend):
 
 
 def default_params_for(stage: str) -> dict:
-    """REGISTRY 默认 + 最小身份,凑一份能 dry 跑的参数(GUI 用表单值覆盖)。"""
-    params: dict = {ps.name: ps.default for ps in REGISTRY[stage].params}
+    """全量默认 ∪ REGISTRY 默认 ∪ 最小身份,凑一份能 dry 跑的参数(GUI 用表单值覆盖)。
+
+    WGFMU/SMU 协议先铺 `parse_args([])` 全集——runner 会读一些**没暴露成表单**的键
+    (如 E4/E5 的 `e1_wide_vg`),只用 REGISTRY 暴露的参数会缺键 → AttributeError。
+    与 worker(engine_worker.py)凑参数的口径保持一致。
+    """
+    spec = REGISTRY[stage]
+    params: dict = {}
+    if spec.family in ("WGFMU", "SMU"):
+        try:
+            from fefetlab.protocols.wgfmu_fefet import parse_args
+            params.update(vars(parse_args([])))
+        except Exception:  # noqa: BLE001
+            pass
+    params.update({ps.name: ps.default for ps in spec.params})
     params.setdefault("device_id", "PREVIEW")
     params.setdefault("geometry", "L10W10")
     for k in ("serial", "device_type", "operator"):

@@ -383,8 +383,7 @@ class MainWindow(QMainWindow):
             return
         live = self.run_control.is_live()
         if live and not self.run_control.live_preconditions_ok():
-            QMessageBox.warning(self, "live 未就绪",
-                                "live 模式需勾选接线确认,并在 confirm 框手输当前 stage 码。")
+            QMessageBox.warning(self, "live 未就绪", "live 模式需先勾选「我已确认探针位置与接线」。")
             return
         if live:
             from fefetlab.engine import REGISTRY
@@ -406,7 +405,7 @@ class MainWindow(QMainWindow):
             return
         params.update(self.run_control.identity())
         req = RunRequest(stage=stage, params=params, live=live,
-                         confirm=self.run_control.confirm_text(),
+                         confirm=(stage if live else ""),     # stage 码壳自动带,不用手输
                          out_root=self.run_control.out_root())
         if not self.controller.start(req):
             self.run_control.set_status("已有运行在进行中", error=True)

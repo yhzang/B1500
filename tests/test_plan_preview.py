@@ -42,3 +42,11 @@ def test_preview_param_override_changes_write_v():
     assert over["ok"]
     assert over["summary"]["v_write_V"] == -3.5
     assert over["summary"]["v_write_V"] != base_r["summary"]["v_write_V"]
+
+
+@pytest.mark.parametrize("stage", ["E4", "E5", "E1", "E6R"])
+def test_preview_wgfmu_base_stages_no_missing_key(stage):
+    # 回归:E4/E5 等 runner 读 e1_wide_vg 等"未暴露成表单"的键;预览须铺全量默认,否则 AttributeError
+    r = build_timing_preview(stage)
+    assert r["ok"], r.get("error")
+    assert r["summary"]["n_vectors_gate_max"] > 0

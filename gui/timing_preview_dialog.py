@@ -56,7 +56,7 @@ class TimingPreviewDialog(QDialog):
 
         box = QGroupBox("波形参数(协议真实 build,= live 时下发的同一条)")
         form = QFormLayout(box)
-        form.addRow("协议", QLabel(str(s.get("stage", ""))))
+        form.addRow("协议", QLabel(self._title_of(s.get("stage", ""))))
         form.addRow("上升/下降沿 T_RF", QLabel(_fmt_s(s.get("t_rf_s"))))
         tw = _fmt_s(s.get("t_write_s")) if s.get("t_write_s") else "100µs(默认)"
         form.addRow("写脉冲", QLabel(f"{_fmt_v(s.get('v_write_V'))} · {tw}"))
@@ -83,7 +83,19 @@ class TimingPreviewDialog(QDialog):
         row.addWidget(btn)
         lay.addLayout(row)
 
+    @staticmethod
+    def _title_of(stage: str) -> str:
+        """把协议码换成形象名给人看(协议码留后台)。"""
+        try:
+            from fefetlab.engine import REGISTRY
+            sp = REGISTRY.get(stage)
+            return sp.title if sp is not None else str(stage)
+        except Exception:  # noqa: BLE001
+            return str(stage)
+
     def _build_plot(self, preview: dict, lay) -> None:
+        import math
+
         try:
             import pyqtgraph as pg
         except Exception as exc:  # noqa: BLE001
@@ -101,19 +113,10 @@ class TimingPreviewDialog(QDialog):
         pw.setLabel("left", "栅电压 (V)")
         pw.setLabel("bottom", "时间 (s)")
         pw.showGrid(x=True, y=True, alpha=0.3)
-        pw.getViewBox().setMouseMode(pg.ViewBox.RectMode)       # 拖动 = 框选放大
-
-        pts = preview.get("gate_points", [])
-        if pts:
-            pw.plot([p[0] for p in pts], [p[1] for p in pts],
-                    pen=pg.mkPen("#1565C0", width=2))
-        for te in preview.get("read_events_s", []):
-            pw.addItem(pg.InfiniteLine(pos=te, angle=90,
-                                       pen=pg.mkPen("#D84315", width=1, style=Qt.PenStyle.DashLine)))
+        # 默认 PanMode:拖动 = 平移;滚轮 = 缩放;右键拖 = 框选放大
 
         ctl = QHBoxLayout()
         cb_logx = QCheckBox("X 对数轴(延迟跨度大时好用)")
-        cb_logx.toggled.connect(lambda c: pw.setLogMode(x=c))
         btn_reset = QPushButton("重置视图")
         btn_reset.clicked.connect(pw.autoRange)
         ctl.addWidget(cb_logx)
@@ -122,8 +125,30 @@ class TimingPreviewDialog(QDialog):
         lay.addLayout(ctl)
         lay.addWidget(pw, 1)
 
-        note = QLabel("蓝线 = 栅电压波形(升/降沿 T_RF 是斜边,放大可见);橙虚线 = 读窗。"
-                      "拖动框选放大 · 滚轮缩放 · 「重置视图」复原。E6M 取一个 checkpoint 读段。")
+        pts = preview.get("gate_points", [])
+        if pts:
+            xs = [p[0] for p in pts]
+            pw.plot(xs, [p[1] for p in pts], pen=pg.mkPen("#1565C0", width=2))
+        read_lines = []
+        for te in preview.get("read_events_s", []):
+            ln = pg.InfiniteLine(pos=te, angle=90,
+                                 pen=pg.mkPen("#D84315", width=1.5, style=Qt.PenStyle.DashLine))
+            pw.addItem(ln)
+            read_lines.append((ln, te))
+
+        def _set_logx(checked):
+            pw.setLogMode(x=checked)
+            for ln, t in read_lines:                           # log 模式下 InfiniteLine 要换成 log10 坐标
+                ln.setValue(math.log10(t) if (checked and t > 0) else t)
+            pw.autoRange()
+
+        cb_logx.toggled.connect(_set_logx)
+        pos = [x for x in (xs if pts else []) if x > 0]
+        if pos and max(pos) / min(pos) > 100:                  # 时间跨多个数量级 → 默认对数轴,右侧读点才看得见
+            cb_logx.setChecked(True)
+
+        note = QLabel("蓝线 = 栅电压波形(升/降沿 T_RF 是斜边,放大可见);橙虚线 = 读窗位置。"
+                      "拖动平移 · 滚轮缩放 · 右键拖框选放大 · 「重置视图」复原;读点挤在一侧时勾「X 对数轴」。")
         note.setStyleSheet("color:#888;")
         note.setWordWrap(True)
         lay.addWidget(note)

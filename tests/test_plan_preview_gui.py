@@ -52,3 +52,31 @@ def test_preview_worker_emits_result(qapp):
     w.done.connect(got.append)
     w.run()                                               # 同步跑(不 start),验证 emit
     assert got and got[0]["ok"]
+
+
+def test_live_precondition_wiring_only(qapp):
+    from gui.run_control_panel import RunControlPanel
+
+    rc = RunControlPanel()
+    assert not hasattr(rc, "ed_confirm")                  # 手输 stage 码的框已移除
+    rc.rb_live.setChecked(True)
+    assert rc.live_preconditions_ok() is False            # 没勾接线 → 不就绪
+    rc.chk_wiring.setChecked(True)
+    assert rc.live_preconditions_ok() is True             # 勾了接线就行,不用手输 stage
+
+
+def test_tree_leaf_is_title_only(qapp):
+    from PySide6.QtCore import Qt
+
+    from fefetlab.engine import REGISTRY
+    from gui.protocol_panel import ProtocolPanel
+
+    p = ProtocolPanel()
+    leaf = {}
+    for i in range(p.tree.topLevelItemCount()):
+        grp = p.tree.topLevelItem(i)
+        for j in range(grp.childCount()):
+            ch = grp.child(j)
+            leaf[ch.data(0, Qt.ItemDataRole.UserRole)] = ch.text(0)
+    assert leaf.get("E6M") == REGISTRY["E6M"].title       # 只显示形象名
+    assert "E6M" not in leaf.get("E6M", "")               # 代号不在显示文本里

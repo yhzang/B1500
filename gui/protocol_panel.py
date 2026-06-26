@@ -104,11 +104,10 @@ class ProtocolPanel(QWidget):
             grp.setFirstColumnSpanned(True)
             self.tree.addTopLevelItem(grp)
             for spec in by_group[key]:
-                leaf = QTreeWidgetItem([f"{spec.title}  ({spec.id})"])
+                leaf = QTreeWidgetItem([spec.title])      # 只显示形象名,协议码留后台(id 进 UserRole/tooltip)
                 leaf.setData(0, _ROLE_ID, spec.id)
                 tip = spec.note or spec.description or ""
-                if tip:
-                    leaf.setToolTip(0, tip)
+                leaf.setToolTip(0, f"{tip}\n[{spec.id}]" if tip else f"[{spec.id}]")
                 grp.addChild(leaf)
             grp.setExpanded(True)
 

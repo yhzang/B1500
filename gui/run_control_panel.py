@@ -94,11 +94,8 @@ class RunControlPanel(QWidget):
 
         self._live_box = QGroupBox("live 确认(仅 live 时需要)")
         live_form = QFormLayout(self._live_box)
-        self.chk_wiring = QCheckBox("我已确认探针位置与接线(Gate=202 / Drain=201)")
-        self.ed_confirm = QLineEdit()
-        self.ed_confirm.setPlaceholderText("手输当前 stage 码,如 E1")
+        self.chk_wiring = QCheckBox("我已确认探针位置与接线正确(Gate=202 / Drain=201),可下发真机")
         live_form.addRow(self.chk_wiring)
-        live_form.addRow(QLabel("confirm ="), self.ed_confirm)
         self._live_box.setVisible(False)
 
         # ── 预检 / 安全 ──
@@ -127,8 +124,8 @@ class RunControlPanel(QWidget):
         self._collapse_k.setValue(3.0)
         self._collapse_k.setSuffix(" ×σ")
         self._collapse_k.setToolTip("|Id| < k×Id_std(信号没过噪声)且 Ig 健康 → 疑似窗塌;只提示不拦")
-        sb_form.addRow(QLabel("导通阈 |Id|≥"), self._cond_uA)
-        sb_form.addRow(QLabel("窗塌阈 |Id|<"), self._collapse_k)
+        sb_form.addRow(QLabel("导通判定(µA)"), self._cond_uA)
+        sb_form.addRow(QLabel("窗塌判定(×噪声σ)"), self._collapse_k)
         self._health = QLabel("器件判定:—")
         sb_form.addRow(self._health)
 
@@ -179,14 +176,11 @@ class RunControlPanel(QWidget):
     def is_live(self) -> bool:
         return self.rb_live.isChecked()
 
-    def confirm_text(self) -> str:
-        return self.ed_confirm.text().strip()
-
     def live_preconditions_ok(self) -> bool:
-        """live 提交的 UI 双保险(引擎仍会兜底)。dry 永远 True。"""
+        """live 提交的 UI 闸:勾了接线确认即可(stage 码由壳自动带,不用手输)。dry 永远 True。"""
         if not self.is_live():
             return True
-        return self.chk_wiring.isChecked() and self.confirm_text() != ""
+        return self.chk_wiring.isChecked()
 
     def set_running(self, running: bool) -> None:
         self.btn_run.setEnabled(not running)
