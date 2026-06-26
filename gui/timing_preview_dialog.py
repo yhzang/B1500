@@ -109,9 +109,8 @@ class TimingPreviewDialog(QDialog):
             ax = pw.getAxis(name)
             ax.setPen("#555")
             ax.setTextPen("#555")
-        pw.getAxis("left").enableAutoSIPrefix(False)            # 真实伏特,不要 ×0.001
-        pw.setLabel("left", "栅电压 (V)")
-        pw.setLabel("bottom", "时间 (s)")
+        pw.setLabel("left", "栅电压", units="V")                # units= 让 pg 自动加 V/mV,不出难看的 ×0.001
+        pw.setLabel("bottom", "时间", units="s")                # 自动 s/ms/µs,按数据量级走
         pw.showGrid(x=True, y=True, alpha=0.3)
         # 默认 PanMode:拖动 = 平移;滚轮 = 缩放;右键拖 = 框选放大
 

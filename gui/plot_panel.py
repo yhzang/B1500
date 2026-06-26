@@ -267,7 +267,7 @@ class PlotPanel(QWidget):
             _lg.clear()
         else:
             self._wave.addLegend(offset=(10, 10))
-        self._wave.setTitle("编程波形(最后一炮)")
+        self._wave.setTitle(None)          # 标题去掉:tab 已写"编程波形",不要"(最后一炮)"这种冗余
         colors = ["#2659AD", "#B80000", "#1A801A", "#8000A0"]
         for i, pat in enumerate(patterns or []):
             x = [t * 1e3 for t in pat.get("x", [])]

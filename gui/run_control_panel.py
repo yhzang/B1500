@@ -85,8 +85,8 @@ class RunControlPanel(QWidget):
         # ── 模式 ──
         self._mode_box = QGroupBox("模式")
         mode_lay = QVBoxLayout(self._mode_box)
-        self.rb_dry = QRadioButton("预演 / Plan(默认,不接仪器:时序预览 + 占位数据)")
-        self.rb_live = QRadioButton("live(真机,一段一确认)")
+        self.rb_dry = QRadioButton("预演 / Plan")
+        self.rb_live = QRadioButton("live(真机)")
         self.rb_dry.setChecked(True)
         self.rb_dry.toggled.connect(self._on_mode_toggled)
         mode_lay.addWidget(self.rb_dry)

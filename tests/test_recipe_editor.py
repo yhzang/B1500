@@ -130,3 +130,14 @@ def test_mainwindow_delete_recipe_menu(qapp):
         if m:
             labels += [a.text() for a in m.actions()]
     assert any("删除自定义协议" in t for t in labels)
+
+
+def test_protocol_panel_new_recipe_button(qapp):
+    from gui.protocol_panel import ProtocolPanel
+
+    p = ProtocolPanel()
+    assert hasattr(p, "btn_new_recipe")          # 协议树下方有显眼的"新建自定义协议"按钮
+    fired: list = []
+    p.newRecipeRequested.connect(lambda: fired.append(1))
+    p.btn_new_recipe.click()
+    assert fired == [1]                           # 点击发信号(壳接到开编辑器)

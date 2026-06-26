@@ -8,6 +8,7 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QLabel,
+    QPushButton,
     QScrollArea,
     QSplitter,
     QTreeWidget,
@@ -28,6 +29,7 @@ class ProtocolPanel(QWidget):
     """左栏:上=协议树,下=该协议的参数表单。"""
 
     protocolSelected = Signal(str)  # protocol_id
+    newRecipeRequested = Signal()   # 点"新建自定义协议"按钮(壳接到 MainWindow 开编辑器)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -48,6 +50,10 @@ class ProtocolPanel(QWidget):
         top_lay.setContentsMargins(0, 0, 0, 0)
         top_lay.addWidget(QLabel("协议(按设备族分组)"))
         top_lay.addWidget(self.tree)
+        self.btn_new_recipe = QPushButton("＋ 新建自定义协议…")
+        self.btn_new_recipe.setToolTip("自己拼 复位/脉冲/延迟/读 的任意时序,存成协议,可预览可跑")
+        self.btn_new_recipe.clicked.connect(self.newRecipeRequested)
+        top_lay.addWidget(self.btn_new_recipe)
         splitter.addWidget(top)
         splitter.addWidget(form_scroll)
         splitter.setStretchFactor(0, 1)

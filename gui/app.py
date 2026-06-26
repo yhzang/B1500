@@ -338,6 +338,7 @@ class MainWindow(QMainWindow):
         self.run_control.stopClicked.connect(self.controller.stop)
         self.run_control.previewClicked.connect(self._on_preview)
         self.protocol_panel.protocolSelected.connect(self._on_protocol_selected)
+        self.protocol_panel.newRecipeRequested.connect(self._on_new_recipe)
         self.schedule_panel.triggerMeasurement.connect(self._on_timed_trigger)
 
         c = self.controller
