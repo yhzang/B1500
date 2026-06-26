@@ -156,6 +156,10 @@ class MainWindow(QMainWindow):
         self.act_warn_cond.setChecked(self._warn_no_conduction)
         self.act_warn_cond.toggled.connect(self._set_warn_no_conduction)
         m_dev.addAction(self.act_warn_cond)
+        m_dev.addSeparator()
+        act_new_recipe = QAction("新建自定义协议…", self)
+        act_new_recipe.triggered.connect(self._on_new_recipe)
+        m_dev.addAction(act_new_recipe)
 
         m_help = mb.addMenu("帮助(&H)")
         act_about = QAction("关于", self)
@@ -262,6 +266,20 @@ class MainWindow(QMainWindow):
             "SMU(DC)角色:G=4 / D=5 / S=6\n\n"
             "改接线 / 跨机器配置走「接线档案」(SetupProfile,后续里程碑)。\n"
             "live 真机连接与会话恢复属 M4(需在测试机接 B1500 验证)。")
+
+    def _on_new_recipe(self) -> None:
+        """打开配方编辑器;保存后即时刷新协议树并选中新协议。"""
+        from .recipe_editor import RecipeEditorDialog
+
+        dlg = RecipeEditorDialog(self)
+        dlg.saved.connect(self._on_recipe_saved)
+        dlg.exec()
+
+    def _on_recipe_saved(self, pid: str) -> None:
+        self.protocol_panel.refresh()
+        self.protocol_panel.select_protocol(pid)
+        self.log_panel.append("INFO", "RECIPE", f"自定义协议已保存并注册:{pid}")
+        self.run_control.set_status(f"自定义协议已加:{pid}")
 
     def _on_about(self) -> None:
         QMessageBox.about(

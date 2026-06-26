@@ -34,9 +34,14 @@ def _run_e3w(tmp_path, randomize, tag):
     return pd.read_csv(summ.out_csv)
 
 
+def _norm(df):
+    # 抹掉随运行时刻变化的列(timestamp_iso),只比"协议产出"本身——否则两次跨秒就假阳性。
+    return df.drop(columns=["timestamp_iso"], errors="ignore").reset_index(drop=True)
+
+
 def test_e3w_honors_randomize_flag(tmp_path):
-    a = _run_e3w(tmp_path, False, "n1")
-    b = _run_e3w(tmp_path, False, "n2")
-    c = _run_e3w(tmp_path, True, "r1")
+    a = _norm(_run_e3w(tmp_path, False, "n1"))
+    b = _norm(_run_e3w(tmp_path, False, "n2"))
+    c = _norm(_run_e3w(tmp_path, True, "r1"))
     assert a.equals(b)          # 关随机化 → 完全确定(两次一致)
     assert not a.equals(c)      # 开/关 → 行顺序不同,证明 flag 真生效

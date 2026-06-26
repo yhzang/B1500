@@ -76,6 +76,27 @@ def build_timing_preview(stage: str, params: dict | None = None) -> dict:
     if params:
         p.update(params)
     p["live"] = False
+    return _capture_extract(lambda b: ProtocolEngine().run(stage, p, backend=b), stage, p)
+
+
+def preview_declared(decl, params: dict | None = None) -> dict:
+    """预览一条**未保存**的声明式配方(GUI 编辑器用):直接 compile_declared 抓波形。从不抛。"""
+    from fefetlab.engine.param_view import ParamView
+    from fefetlab.protocols.declared.compiler import compile_declared
+    from fefetlab.protocols.declared.registry_glue import _validate, default_params_for_decl
+    try:
+        _validate(decl)
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)}
+    p = default_params_for_decl(decl)
+    if params:
+        p.update(params)
+    p["live"] = False
+    return _capture_extract(lambda b: compile_declared(decl, b, ParamView(p)), decl.id, p)
+
+
+def _capture_extract(run_fn, stage_label: str, p: dict) -> dict:
+    """跑 run_fn(prev_backend)(dry)抓各段波形,抽摘要 + 折线点。**从不抛异常。**"""
     tmp = Path(tempfile.mkdtemp(prefix="plan_preview_"))
     p["out_root"] = str(tmp)
     prev = _CaptureBackend(gate_ch=base.GATE_CH, drain_ch=base.DRAIN_CH,
@@ -85,7 +106,7 @@ def build_timing_preview(stage: str, params: dict | None = None) -> dict:
     prev._fefet_wgfmu_initialized = False
     err = None
     try:
-        ProtocolEngine().run(stage, p, backend=prev)
+        run_fn(prev)
     except Exception as exc:  # noqa: BLE001  预览失败不应中断 GUI
         err = f"{type(exc).__name__}: {exc}"
     finally:
@@ -122,7 +143,7 @@ def build_timing_preview(stage: str, params: dict | None = None) -> dict:
 
     budget = base.WGFMU_MAX_VECTORS_PER_PATTERN
     summary = {
-        "stage": stage,
+        "stage": stage_label,
         "t_rf_s": base.T_RF,
         "v_write_V": g("write_v", "v_write"),       # None = ±5V 默认
         "t_write_s": g("t_write_s", "t_write"),      # None = 100µs 默认

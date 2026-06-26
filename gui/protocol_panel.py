@@ -77,6 +77,16 @@ class ProtocolPanel(QWidget):
                     return True
         return False
 
+    def refresh(self) -> None:
+        """REGISTRY 变了(新增/删除自定义协议)后重建树,尽量保持当前选中。"""
+        cur = self._current_id
+        self.tree.blockSignals(True)
+        self.tree.clear()
+        self._populate()
+        self.tree.blockSignals(False)
+        if cur and not self.select_protocol(cur):
+            self._current_id = None
+
     # ── 内部 ────────────────────────────────────────────────────────────────
     def _populate(self) -> None:
         # 按 group(按"测什么")分组,first-occurrence 顺序(=协议工作流顺序);group 空回退 family。

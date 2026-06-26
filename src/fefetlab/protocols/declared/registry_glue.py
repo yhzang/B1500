@@ -52,14 +52,43 @@ def _params_from_decl(decl: DeclaredProtocol) -> tuple[ParamSpec, ...]:
     return tuple(ps)
 
 
+def spec_from_decl(decl: DeclaredProtocol) -> ProtocolSpec:
+    """单条 DeclaredProtocol → ProtocolSpec(校验 + 装 compile_declared 为 runner)。"""
+    _validate(decl)
+    return ProtocolSpec(
+        id=decl.id, title=decl.title, family="CUSTOM", physics=decl.physics,
+        description=decl.description, params=_params_from_decl(decl),
+        csv_schema="fefet_fixedcols", group=decl.group,
+        output_label=decl.id, runner=partial(compile_declared, decl),
+    )
+
+
+def default_params_for_decl(decl: DeclaredProtocol) -> dict:
+    """该声明式协议的 dry 默认参数(reps/n_pts/通道/扫描/Ig 门 + 最小身份)。"""
+    p = {ps.name: ps.default for ps in _params_from_decl(decl)}
+    p.update(device_id="PREVIEW", geometry="L10W10", serial="",
+             device_type="", operator="", seed=20260603, live=False)
+    return p
+
+
 def build_declared_specs() -> dict[str, ProtocolSpec]:
+    from .user_store import load_recipes
+
     out: dict[str, ProtocolSpec] = {}
-    for decl in DECLARED_PROTOCOLS:
-        _validate(decl)
-        out[decl.id] = ProtocolSpec(
-            id=decl.id, title=decl.title, family="CUSTOM", physics=decl.physics,
-            description=decl.description, params=_params_from_decl(decl),
-            csv_schema="fefet_fixedcols", group=decl.group,
-            output_label=decl.id, runner=partial(compile_declared, decl),
-        )
+    for decl in DECLARED_PROTOCOLS:                 # 内置:坏就该炸(测试覆盖)
+        out[decl.id] = spec_from_decl(decl)
+    for decl in load_recipes():                     # 用户配方:坏的跳过,不拖垮 app
+        try:
+            out[decl.id] = spec_from_decl(decl)
+        except Exception:  # noqa: BLE001
+            continue
     return out
+
+
+def register_recipe(decl: DeclaredProtocol) -> ProtocolSpec:
+    """把一条配方即时注册进 REGISTRY(GUI 新建后免重启)。返回其 ProtocolSpec。"""
+    from ...engine.registry import REGISTRY
+
+    spec = spec_from_decl(decl)
+    REGISTRY[decl.id] = spec
+    return spec
