@@ -50,14 +50,18 @@ def default_params_for(stage: str) -> dict:
     return params
 
 
-def _timeline(pattern: dict) -> list[tuple[float, float, float]]:
-    """patterns[name] -> [(t_start, t_end, voltage)] 阶梯段。"""
-    segs: list[tuple[float, float, float]] = []
+def _points(pattern: dict) -> list[tuple[float, float]]:
+    """patterns[name] -> [(t, voltage)] 折线端点(含 init_v 起点)。
+
+    AuditBackend 的每个 vector = "从上一终点**线性**斜升/降到 voltage,历时 dt",所以波形
+    是分段线性(升降沿 T_RF 是斜边),用端点折线画才忠实——不是阶梯,这样升/降时间看得见。
+    """
+    pts: list[tuple[float, float]] = [(0.0, float(pattern.get("init_v", 0.0)))]
     t = 0.0
     for dt, v in pattern.get("vectors", []):
-        segs.append((t, t + dt, v))
         t += dt
-    return segs
+        pts.append((t, float(v)))
+    return pts
 
 
 def build_timing_preview(stage: str, params: dict | None = None) -> dict:
@@ -104,8 +108,8 @@ def build_timing_preview(stage: str, params: dict | None = None) -> dict:
         repr_shot = max(shots, key=lambda s: len(_vecs(s)))
     gp = _gp(repr_shot)
     dp = repr_shot["patterns"].get("dp", {})
-    gate_tl = _timeline(gp)
-    drain_tl = _timeline(dp)
+    gate_pts = _points(gp)
+    drain_pts = _points(dp)
     repr_events = sorted(repr_shot["events"].values(), key=lambda e: e["time_s"])
     total = sum(sum(dt for dt, _ in _vecs(s)) for s in shots)   # 全部段累计时长
     n_vec_max = max((len(_vecs(s)) for s in shots), default=0)   # 单段最大(对照预算)
@@ -139,8 +143,8 @@ def build_timing_preview(stage: str, params: dict | None = None) -> dict:
     return {
         "ok": True,
         "summary": summary,
-        "gate_timeline": gate_tl,
-        "drain_timeline": drain_tl,
+        "gate_points": gate_pts,
+        "drain_points": drain_pts,
         "read_events_s": [e["time_s"] for e in repr_events],
         "note": err,
     }

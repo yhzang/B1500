@@ -16,11 +16,11 @@ def test_preview_single_write(stage):
     assert s["n_vectors_gate_max"] > 0           # 抓到栅波形向量
     assert s["n_read_events"] >= 1               # 代表段至少一个读窗
     assert "v_write_V" in s                      # 写压键在(None=±5V 默认,合法)
-    assert len(r["gate_timeline"]) > 0
-    assert r["gate_timeline"][0][0] == 0.0       # 时间从 0 起
-    # 时间线单调:每段终点 == 下段起点
-    for a, b in zip(r["gate_timeline"], r["gate_timeline"][1:]):
-        assert a[1] == pytest.approx(b[0])
+    pts = r["gate_points"]
+    assert len(pts) >= 2                          # 折线端点(含 init 起点)
+    assert pts[0][0] == 0.0                       # 时间从 0 起
+    ts = [p[0] for p in pts]
+    assert ts == sorted(ts)                       # 时间单调不减
 
 
 def test_preview_reflects_budget():
