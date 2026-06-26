@@ -84,3 +84,50 @@ def test_register_recipe_live_and_preview():
         assert r2["ok"], r2.get("error")
     finally:
         REGISTRY.pop("ERS2_DLY", None)                # 清理,免污染 test_engine_run 的全集断言
+
+
+def test_reserved_builtin_id_and_register_rejected():
+    from fefetlab.engine import REGISTRY
+    from fefetlab.protocols.declared.registry_glue import is_reserved_builtin_id, register_recipe
+    from fefetlab.protocols.declared.schema import DeclaredProtocol, ReadStep
+
+    assert is_reserved_builtin_id("E1S") is True        # 内置 WGFMU
+    assert is_reserved_builtin_id("DEMO_RET") is True    # 内置声明式
+    assert is_reserved_builtin_id("ZZ_NOPE_123") is False
+    bad = DeclaredProtocol(id="E1S", title="HIJACK", steps=(ReadStep(vg_list=(-1.0,), vd=0.05),))
+    with pytest.raises(ValueError):
+        register_recipe(bad)
+    assert REGISTRY["E1S"].family == "WGFMU"             # 没被覆盖
+
+
+def test_build_declared_user_cannot_override_builtin(monkeypatch):
+    import fefetlab.protocols.declared.registry_glue as rg
+    from fefetlab.protocols.declared.schema import DeclaredProtocol, ReadStep
+
+    fake = DeclaredProtocol(id="DEMO_RET", title="HIJACK",
+                            steps=(ReadStep(vg_list=(-1.0,), vd=0.05),))
+    monkeypatch.setattr("fefetlab.protocols.declared.user_store.load_recipes",
+                        lambda base=None: [fake])
+    specs = rg.build_declared_specs()
+    assert specs["DEMO_RET"].title != "HIJACK"           # 内置赢,用户同名不覆盖
+
+
+def test_unregister_and_custom_ids():
+    from fefetlab.engine import REGISTRY
+    from fefetlab.protocols.declared.registry_glue import (
+        custom_recipe_ids,
+        register_recipe,
+        unregister_recipe,
+    )
+
+    register_recipe(_demo())
+    try:
+        assert "ERS2_DLY" in custom_recipe_ids()
+        assert "E1S" not in custom_recipe_ids()          # 内置不算自定义
+        assert "DEMO_RET" not in custom_recipe_ids()     # 内置声明式不算
+        assert unregister_recipe("ERS2_DLY") is True
+        assert "ERS2_DLY" not in REGISTRY
+        assert unregister_recipe("E1S") is False         # 内置不可退注册
+        assert REGISTRY["E1S"].family == "WGFMU"
+    finally:
+        REGISTRY.pop("ERS2_DLY", None)

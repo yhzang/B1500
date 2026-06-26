@@ -164,7 +164,10 @@ class RecipeEditorDialog(QDialog):
                 steps.append(DelayStep(t=_f(self._tbl.item(r, 2), 0.0)))
             elif typ == "读":
                 vg_txt = self._tbl.item(r, 4).text().replace("，", ",")
-                vg = tuple(float(x) for x in vg_txt.split(",") if x.strip())
+                try:
+                    vg = tuple(float(x) for x in vg_txt.split(",") if x.strip())
+                except ValueError:
+                    raise ValueError(f"第{r + 1}步「读」的 Vg 含非法数字:{vg_txt!r}")
                 steps.append(ReadStep(vg_list=vg or (-1.0,),
                                       vd=_f(self._tbl.item(r, 5), 0.05),
                                       n_pts=int(_f(self._tbl.item(r, 6), 5))))
@@ -182,11 +185,20 @@ class RecipeEditorDialog(QDialog):
             return "协议码非法(只允许字母/数字/_/-,≤40,不能空)"
         if not decl.steps or decl.steps[-1].kind != "read":
             return "末尾必须是「读」步骤"
+        for i, s in enumerate(decl.steps, 1):
+            if s.kind == "pulse" and s.width <= 0:
+                return f"第{i}步 脉冲宽度必须 > 0"
+            if s.kind in ("reset", "delay") and s.t < 0:
+                return f"第{i}步 时长不能为负"
         return None
 
     # ── 预览 / 保存 ──────────────────────────────────────────────────────────
     def _on_preview(self) -> None:
-        decl = self._build_decl()
+        try:
+            decl = self._build_decl()
+        except ValueError as exc:
+            QMessageBox.warning(self, "无法预览", str(exc))
+            return
         msg = self._validate(decl)
         if msg:
             QMessageBox.warning(self, "无法预览", msg)
@@ -194,28 +206,37 @@ class RecipeEditorDialog(QDialog):
         from .plan_preview import preview_declared
         from .timing_preview_dialog import TimingPreviewDialog
 
-        r = preview_declared(decl)
+        r = preview_declared(decl, {"reps": 1})       # 预览与 reps 无关,钳到 1 免冻界面
         if not r.get("ok"):
             QMessageBox.warning(self, "预览失败", str(r.get("error")))
             return
         TimingPreviewDialog(r, self).exec()
 
     def _on_save(self) -> None:
-        decl = self._build_decl()
+        try:
+            decl = self._build_decl()
+        except ValueError as exc:
+            QMessageBox.warning(self, "无法保存", str(exc))
+            return
         msg = self._validate(decl)
         if msg:
             QMessageBox.warning(self, "无法保存", msg)
             return
         from fefetlab.engine import REGISTRY
-        if decl.id in REGISTRY and REGISTRY[decl.id].family != "CUSTOM":
-            QMessageBox.warning(self, "ID 冲突", f"{decl.id} 与内置协议重名,换一个")
+        from fefetlab.protocols.declared.registry_glue import is_reserved_builtin_id, register_recipe
+        from fefetlab.protocols.declared.user_store import delete_recipe, recipes_dir, save_recipe
+        if is_reserved_builtin_id(decl.id):
+            QMessageBox.warning(self, "ID 冲突", f"{decl.id} 是内置协议 id,换一个")
             return
-        from fefetlab.protocols.declared.registry_glue import register_recipe
-        from fefetlab.protocols.declared.user_store import save_recipe
+        if (recipes_dir() / f"{decl.id}.json").exists() or decl.id in REGISTRY:
+            if QMessageBox.question(self, "覆盖确认", f"已存在自定义配方「{decl.id}」,覆盖它?") \
+                    != QMessageBox.StandardButton.Yes:
+                return
         try:
             save_recipe(decl)
             register_recipe(decl)
         except Exception as exc:  # noqa: BLE001
+            delete_recipe(decl.id)       # 注册失败回滚已落盘文件,避免"重启冒出来"的幽灵协议
             QMessageBox.critical(self, "保存失败", str(exc))
             return
         self.saved.emit(decl.id)

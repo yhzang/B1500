@@ -85,3 +85,48 @@ def test_recipe_saved_refreshes_tree(qapp):
     finally:
         REGISTRY.pop("TREE_TEST", None)
         win.protocol_panel.refresh()
+
+
+def test_editor_build_decl_bad_vg_raises(qapp):
+    from gui.recipe_editor import RecipeEditorDialog
+
+    dlg = RecipeEditorDialog()
+    last = dlg._tbl.rowCount() - 1
+    dlg._tbl.item(last, 4).setText("-1.0,abc")           # 读 Vg 含字母
+    with pytest.raises(ValueError):
+        dlg._build_decl()
+
+
+def test_editor_validate_negative_width(qapp):
+    from gui.recipe_editor import RecipeEditorDialog
+
+    dlg = RecipeEditorDialog()
+    dlg._id.setText("OK_ID")
+    for r in range(dlg._tbl.rowCount()):
+        if dlg._tbl.item(r, 0).text() == "脉冲":
+            dlg._tbl.item(r, 2).setText("-1e-6")
+    assert "宽度" in (dlg._validate(dlg._build_decl()) or "")
+
+
+def test_editor_save_reserved_id_blocked(qapp, monkeypatch):
+    from gui.recipe_editor import RecipeEditorDialog
+
+    dlg = RecipeEditorDialog()
+    dlg._id.setText("E1S")                               # 内置 id
+    got: list = []
+    dlg.saved.connect(got.append)
+    monkeypatch.setattr("gui.recipe_editor.QMessageBox.warning", lambda *a, **k: None)
+    dlg._on_save()
+    assert got == []                                     # 被拦,没保存
+
+
+def test_mainwindow_delete_recipe_menu(qapp):
+    from gui.app import MainWindow
+
+    win = MainWindow()
+    labels: list = []
+    for act in win.menuBar().actions():
+        m = act.menu()
+        if m:
+            labels += [a.text() for a in m.actions()]
+    assert any("删除自定义协议" in t for t in labels)

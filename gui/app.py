@@ -160,6 +160,9 @@ class MainWindow(QMainWindow):
         act_new_recipe = QAction("新建自定义协议…", self)
         act_new_recipe.triggered.connect(self._on_new_recipe)
         m_dev.addAction(act_new_recipe)
+        act_del_recipe = QAction("删除自定义协议…", self)
+        act_del_recipe.triggered.connect(self._on_delete_recipe)
+        m_dev.addAction(act_del_recipe)
 
         m_help = mb.addMenu("帮助(&H)")
         act_about = QAction("关于", self)
@@ -280,6 +283,29 @@ class MainWindow(QMainWindow):
         self.protocol_panel.select_protocol(pid)
         self.log_panel.append("INFO", "RECIPE", f"自定义协议已保存并注册:{pid}")
         self.run_control.set_status(f"自定义协议已加:{pid}")
+
+    def _on_delete_recipe(self) -> None:
+        """删除一条自定义协议(仅 CUSTOM,内置不可删):删盘 + 退注册 + 刷新树。"""
+        from PySide6.QtWidgets import QInputDialog
+
+        from fefetlab.protocols.declared.registry_glue import custom_recipe_ids, unregister_recipe
+        from fefetlab.protocols.declared.user_store import delete_recipe
+
+        ids = custom_recipe_ids()
+        if not ids:
+            QMessageBox.information(self, "删除自定义协议", "当前没有自定义协议。")
+            return
+        sid, ok = QInputDialog.getItem(self, "删除自定义协议", "选择要删除的:", ids, 0, False)
+        if not ok or not sid:
+            return
+        if QMessageBox.question(self, "删除确认", f"删除自定义协议「{sid}」?") \
+                != QMessageBox.StandardButton.Yes:
+            return
+        delete_recipe(sid)
+        unregister_recipe(sid)
+        self.protocol_panel.refresh()
+        self.run_control.set_status(f"已删自定义协议:{sid}")
+        self.log_panel.append("INFO", "RECIPE", f"已删自定义协议:{sid}")
 
     def _on_about(self) -> None:
         QMessageBox.about(

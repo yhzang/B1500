@@ -71,13 +71,37 @@ def default_params_for_decl(decl: DeclaredProtocol) -> dict:
     return p
 
 
+# 内置声明式协议 id(family 也是 CUSTOM,但属内置、用户配方不得占用/覆盖)
+_BUILTIN_DECLARED_IDS = frozenset(d.id for d in DECLARED_PROTOCOLS)
+
+
+def is_reserved_builtin_id(rid: str) -> bool:
+    """该 id 是否属于内置协议(WGFMU/SMU 或内置声明式)——用户配方不得占用/覆盖。"""
+    if rid in _BUILTIN_DECLARED_IDS:
+        return True
+    from ...engine.registry import REGISTRY
+
+    spec = REGISTRY.get(rid)
+    return spec is not None and spec.family != "CUSTOM"
+
+
+def custom_recipe_ids() -> list[str]:
+    """当前 REGISTRY 里"用户自定义"协议 id(CUSTOM 族且非内置声明式),供删除/列举用。"""
+    from ...engine.registry import REGISTRY
+
+    return [sid for sid, sp in REGISTRY.items()
+            if sp.family == "CUSTOM" and sid not in _BUILTIN_DECLARED_IDS]
+
+
 def build_declared_specs() -> dict[str, ProtocolSpec]:
     from .user_store import load_recipes
 
     out: dict[str, ProtocolSpec] = {}
     for decl in DECLARED_PROTOCOLS:                 # 内置:坏就该炸(测试覆盖)
         out[decl.id] = spec_from_decl(decl)
-    for decl in load_recipes():                     # 用户配方:坏的跳过,不拖垮 app
+    for decl in load_recipes():                     # 用户配方:坏的跳过,且不准覆盖内置声明式
+        if decl.id in out:
+            continue
         try:
             out[decl.id] = spec_from_decl(decl)
         except Exception:  # noqa: BLE001
@@ -86,9 +110,21 @@ def build_declared_specs() -> dict[str, ProtocolSpec]:
 
 
 def register_recipe(decl: DeclaredProtocol) -> ProtocolSpec:
-    """把一条配方即时注册进 REGISTRY(GUI 新建后免重启)。返回其 ProtocolSpec。"""
+    """把一条配方即时注册进 REGISTRY(GUI 新建后免重启)。拒绝占用内置 id。"""
     from ...engine.registry import REGISTRY
 
+    if is_reserved_builtin_id(decl.id):
+        raise ValueError(f"{decl.id} 是内置协议 id,自定义配方不能占用")
     spec = spec_from_decl(decl)
     REGISTRY[decl.id] = spec
     return spec
+
+
+def unregister_recipe(recipe_id: str) -> bool:
+    """从 REGISTRY 移除一条自定义协议(仅限 CUSTOM 族且非内置声明式)。返回是否移除。"""
+    from ...engine.registry import REGISTRY
+
+    if recipe_id in custom_recipe_ids():
+        del REGISTRY[recipe_id]
+        return True
+    return False

@@ -481,6 +481,8 @@ def _build_registry() -> dict[str, ProtocolSpec]:
     # ── 声明式自定义协议(项目5 M2 DSL,纯加法、family=CUSTOM 隔离,绝不碰 golden)──
     from ..protocols.declared.registry_glue import build_declared_specs
     for sid, pspec in build_declared_specs().items():
+        if sid in registry:          # 内置(WGFMU/SMU)永远赢:声明式/用户配方绝不覆盖内置协议
+            continue
         registry[sid] = pspec
     return registry
 
