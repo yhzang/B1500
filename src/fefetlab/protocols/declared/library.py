@@ -10,11 +10,11 @@ from .schema import DeclaredProtocol, DelayStep, PulseStep, ReadStep, ResetStep,
 # 示例:写后延迟读(声明式版,演示如何不写代码定义一个保持特性协议)
 DEMO_RET = DeclaredProtocol(
     id="DEMO_RET",
-    title="示例 · 写后延迟读(声明式)",
+    title="Demo: write then delayed read (declarative)",
     physics="retention",
-    description=("reset → 写脉冲(±2.5V/100µs,按 ERS/PGM 取号) → 延迟(扫 5 档) → "
-                 "在 5 个 Vg 点读 Id。这是声明式协议示范:复制本条改 steps/scan_axis 即可加自己的。"),
-    group="自定义协议",
+    description=("reset -> write pulse (+/-2.5V/100us, sign by ERS/PGM) -> delay (5-pt scan) -> "
+                 "read Id at 5 Vg points. Declarative-protocol demo: copy this and edit steps/scan_axis."),
+    group="Custom",
     steps=(
         ResetStep(t=1e-3),
         PulseStep(v=2.5, width=100e-6, sign_by_state=True),

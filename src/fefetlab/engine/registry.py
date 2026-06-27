@@ -73,19 +73,19 @@ from .specs import Widget as W
 # 阶段码 → (人类标题, 物理量语义)。与设计 §7 协议卡片对齐。
 # (友好显示名, physics 标签, GUI 分组名)。代号(S0/E1…)是 key,不在此改;分组按"测什么"。
 _META = {
-    "S0": ("空夹具自检", "smoke", "自检 / 基线"),
-    "S1": ("器件基线读", "baseline", "自检 / 基线"),
-    "E1": ("写后延迟读 · 保持特性", "retention", "保持 retention"),
-    "E2": ("读扰动累积", "read-disturb", "扰动"),
-    "E3W": ("编程脉宽扫描 · 动力学", "pulse-width", "编程动力学"),
-    "E3A": ("编程幅值扫描 · 动力学", "amplitude", "编程动力学"),
-    "E4": ("预偏压印记 imprint", "imprint", "印记"),
-    "E5": ("Vg×Vd 记忆窗网格", "visibility", "记忆窗"),
-    "E6R": ("无扰动参考线", "reference", "扰动"),
-    "E6D": ("半选扰动 → 延迟读", "disturb-delay", "扰动"),
-    "CYCLE": ("耐久循环 · 检查点回读", "endurance", "耐久"),
-    "MLC": ("多值编程(幅值扫描)", "multi-level", "多值 / 闭环"),
-    "ISPP": ("闭环增量编程 write-verify", "closed-loop", "多值 / 闭环"),
+    "S0": ("Empty-fixture smoke", "smoke", "Self-check & Baseline"),
+    "S1": ("Device baseline read", "baseline", "Self-check & Baseline"),
+    "E1": ("Retention vs delay (multi-write)", "retention", "Retention"),
+    "E2": ("Read-disturb accumulation", "read-disturb", "Disturb & Delay"),
+    "E3W": ("Pulse-width scan (dynamics)", "pulse-width", "Programming Dynamics"),
+    "E3A": ("Amplitude scan (dynamics)", "amplitude", "Programming Dynamics"),
+    "E4": ("Pre-bias imprint", "imprint", "Imprint"),
+    "E5": ("Vg x Vd memory-window grid", "visibility", "Memory Window"),
+    "E6R": ("No-disturb reference", "reference", "Disturb & Delay"),
+    "E6D": ("Half-select disturb -> delayed read", "disturb-delay", "Disturb & Delay"),
+    "CYCLE": ("Endurance cycling (checkpoint readback)", "endurance", "Endurance / Cycling"),
+    "MLC": ("Multi-level programming (amplitude scan)", "multi-level", "MLC / ISPP"),
+    "ISPP": ("Closed-loop write-verify (ISPP)", "closed-loop", "MLC / ISPP"),
 }
 
 
@@ -312,8 +312,8 @@ def _dcp(name, kind, default, *, label, unit="", vis=V.BASIC, widget=W.DOUBLE_SP
 
 
 _META_SMU = {
-    "DC_IDVG": ("转移特性 Id-Vg", "transfer", "直流 DC"),
-    "DC_IDVD": ("输出特性 Id-Vd", "output", "直流 DC"),
+    "DC_IDVG": ("Transfer Id-Vg (Vth)", "transfer", "Transfer & Vth (DC)"),
+    "DC_IDVD": ("Output Id-Vd", "output", "Transfer & Vth (DC)"),
 }
 
 _DC_COMMON = (
@@ -422,9 +422,9 @@ _SINGLE_SHOT_PARAMS = {
 }
 
 _META_SS = {
-    "E1S": ("单写 retention(保持)", "retention", "保持/弛豫(单写)"),
-    "E6S": ("单发 disturb(扰动)", "read-disturb", "扰动(单写)"),
-    "E6M": ("累积 disturb(耐扰)", "read-disturb", "扰动(单写)"),
+    "E1S": ("Retention (single-write)", "retention", "Retention"),
+    "E6S": ("Single disturb shot (single-write)", "read-disturb", "Disturb & Delay"),
+    "E6M": ("Cumulative disturb (single-write)", "read-disturb", "Disturb & Delay"),
 }
 
 _SS_DESC = {

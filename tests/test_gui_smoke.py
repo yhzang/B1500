@@ -316,9 +316,9 @@ def test_protocol_panel_groups_by_category():
 
     p = ProtocolPanel()
     tops = [p.tree.topLevelItem(i).text(0) for i in range(p.tree.topLevelItemCount())]
-    assert "自检 / 基线" in tops
-    assert "直流 DC" in tops
-    assert "自定义协议" in tops  # 声明式 DSL 协议自动出现在 GUI
+    assert "Self-check & Baseline" in tops
+    assert "Transfer & Vth (DC)" in tops
+    assert "Custom" in tops  # 声明式 DSL 协议自动出现在 GUI
     assert "WGFMU" not in tops and "SMU" not in tops  # 不再以仪器族当分组
 
 

@@ -44,6 +44,6 @@ def test_declared_registered_and_isolated():
     spec = REGISTRY["DEMO_RET"]
     assert spec.family == "CUSTOM"          # 独立 family
     assert spec.csv_schema == "fefet_fixedcols"  # 复用现成读相口径(实时图/结果图都生效)
-    assert spec.group == "自定义协议"
+    assert spec.group == "Custom"
     assert callable(spec.runner)
     assert spec.params  # 有表单料(reps/n_pts/通道/扫描轴/停门)

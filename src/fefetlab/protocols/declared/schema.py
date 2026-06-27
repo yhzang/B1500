@@ -59,7 +59,7 @@ class DeclaredProtocol:
     title: str                      # GUI 叶子名(形象名)
     physics: str = "custom"
     description: str = ""
-    group: str = "自定义协议"
+    group: str = "Custom"
     steps: tuple[Step, ...] = ()
     states: tuple[str, ...] = ("ERS", "PGM")   # 双极性;()=单态
     reps: int = 1
