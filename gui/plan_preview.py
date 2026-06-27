@@ -77,6 +77,29 @@ def _points(pattern: dict) -> list[tuple[float, float]]:
     return pts
 
 
+def _features(points, read_times):
+    """从折线找非零保持段(平台),分成 脉冲 / 读 两类,各按电压去重(留最宽的代表)。
+
+    用于在时序预览图上把"这是几伏、多宽的脉冲""这里是读点"直接标出来。
+    """
+    rts = sorted(read_times)
+    best: dict = {}
+    for (t0, v0), (t1, v1) in zip(points, points[1:]):
+        if v0 != v1 or abs(v0) < 1e-9 or t1 <= t0:
+            continue
+        is_read = any(t0 <= rt <= t1 for rt in rts)
+        key = (round(v0, 4), is_read)
+        cand = ((t0 + t1) / 2.0, v0, t1 - t0)
+        if key not in best or cand[2] > best[key][2]:
+            best[key] = cand
+    pulses, reads = [], []
+    for (v, is_read), (t, vv, w) in best.items():
+        (reads if is_read else pulses).append({"t": t, "v": vv, "width": w})
+    pulses.sort(key=lambda d: -abs(d["v"]))
+    reads.sort(key=lambda d: d["t"])
+    return pulses, reads
+
+
 def build_timing_preview(stage: str, params: dict | None = None) -> dict:
     """dry 跑一遍,抓协议 build 的各段波形,抽时序摘要 + 时间线(挑含读窗最多的段当代表)。
 
@@ -174,11 +197,15 @@ def _capture_extract(run_fn, stage_label: str, p: dict) -> dict:
         "n_executes": len(shots),
         "n_read_events": len(repr_events),
     }
+    read_ts = [e["time_s"] for e in repr_events]
+    pulses, reads = _features(gate_pts, read_ts)
     return {
         "ok": True,
         "summary": summary,
         "gate_points": gate_pts,
         "drain_points": drain_pts,
-        "read_events_s": [e["time_s"] for e in repr_events],
+        "read_events_s": read_ts,
+        "pulses": pulses,     # [{t,v,width}] 写/扰动脉冲(按电压去重),供标注
+        "reads": reads,       # [{t,v,width}] 读平台(按电压去重),供标注
         "note": err,
     }

@@ -50,3 +50,13 @@ def test_preview_wgfmu_base_stages_no_missing_key(stage):
     r = build_timing_preview(stage)
     assert r["ok"], r.get("error")
     assert r["summary"]["n_vectors_gate_max"] > 0
+
+
+def test_preview_has_pulse_and_read_features():
+    r = build_timing_preview("E6S")
+    assert r["ok"]
+    assert isinstance(r["pulses"], list) and isinstance(r["reads"], list)
+    # 至少标得出一个非零电压平台(写/扰动脉冲或读点),且每条都带 t/v/width
+    feats = r["pulses"] + r["reads"]
+    assert feats and all({"t", "v", "width"} <= set(f) for f in feats)
+    assert any(abs(f["v"]) > 0.1 for f in feats)

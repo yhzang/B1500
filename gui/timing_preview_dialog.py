@@ -1,8 +1,8 @@
-"""时序预览对话框:展示 plan_preview.build_timing_preview 的结果——
-摘要参数表 + 栅波形折线图(升降沿斜边可见、读窗虚线标记)。只读,关掉即走。
+"""Timing-preview dialog: parameter summary + annotated gate waveform.
 
-波形来自协议真实 build(经 AuditBackend 记录),= live 时下发的同一条。
-图:白底、真实电压单位(不缩放)、拖动框选放大 / 滚轮缩放 / 重置视图 / X 可切对数。
+The waveform is the protocol's real build (captured from AuditBackend) — identical to
+what a live run would send. Pulses are labelled with their voltage/width and read points
+are marked, so it is obvious where reads happen and what each pulse is.
 """
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def _fmt_s(v) -> str:
     if a < 1e-6:
         return f"{v * 1e9:.3g} ns"
     if a < 1e-3:
-        return f"{v * 1e6:.3g} µs"
+        return f"{v * 1e6:.3g} us"
     if a < 1.0:
         return f"{v * 1e3:.3g} ms"
     return f"{v:.3g} s"
@@ -40,7 +40,7 @@ def _fmt_s(v) -> str:
 
 def _fmt_v(v) -> str:
     if v is None or v == "":
-        return "±5V(默认)"
+        return "+/-5V (default)"
     if isinstance(v, str):
         return v
     return f"{v:g} V"
@@ -49,34 +49,34 @@ def _fmt_v(v) -> str:
 class TimingPreviewDialog(QDialog):
     def __init__(self, preview: dict, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("时序预览(Plan / 预演)")
-        self.resize(760, 580)
+        self.setWindowTitle("Timing preview (Plan)")
+        self.resize(780, 580)
         lay = QVBoxLayout(self)
         s = preview.get("summary", {})
 
-        box = QGroupBox("波形参数(协议真实 build,= live 时下发的同一条)")
+        box = QGroupBox("Waveform parameters - identical to what a live run sends")
         form = QFormLayout(box)
-        form.addRow("协议", QLabel(self._title_of(s.get("stage", ""))))
-        form.addRow("上升/下降沿 T_RF", QLabel(_fmt_s(s.get("t_rf_s"))))
-        tw = _fmt_s(s.get("t_write_s")) if s.get("t_write_s") else "100µs(默认)"
-        form.addRow("写脉冲", QLabel(f"{_fmt_v(s.get('v_write_V'))} · {tw}"))
-        form.addRow("读出 Vg 点(序=读序)", QLabel(str(s.get("read_vg_V") or "—")))
-        form.addRow("读窗 t_read × 点数", QLabel(f"{_fmt_s(s.get('t_read_s'))} × {s.get('n_pts')}"))
-        form.addRow("读出 Vd", QLabel(_fmt_v(s.get("vd_read_V"))))
-        form.addRow("延迟 / N 检查点", QLabel(str(s.get("delays_s") or "—")))
+        form.addRow("Protocol", QLabel(self._title_of(s.get("stage", ""))))
+        form.addRow("Rise / fall  T_RF", QLabel(_fmt_s(s.get("t_rf_s"))))
+        tw = _fmt_s(s.get("t_write_s")) if s.get("t_write_s") else "100 us (default)"
+        form.addRow("Write pulse", QLabel(f"{_fmt_v(s.get('v_write_V'))} · {tw}"))
+        form.addRow("Read Vg points (= read order)", QLabel(str(s.get("read_vg_V") or "—")))
+        form.addRow("Read window  t_read x N", QLabel(f"{_fmt_s(s.get('t_read_s'))} x {s.get('n_pts')}"))
+        form.addRow("Read Vd", QLabel(_fmt_v(s.get("vd_read_V"))))
+        form.addRow("Delays / N checkpoints", QLabel(str(s.get("delays_s") or "—")))
         if s.get("disturb_amp_V") is not None:
-            form.addRow("扰动幅值", QLabel(f"{s.get('disturb_amp_V')} V"))
+            form.addRow("Disturb amplitude", QLabel(f"{s.get('disturb_amp_V')} V"))
         if s.get("interval_s") is not None:
-            form.addRow("脉冲间隔 Toff", QLabel(_fmt_s(s.get("interval_s"))))
-        form.addRow("总时长(全部段累计)", QLabel(_fmt_s(s.get("total_shot_duration_s"))))
-        fits = "一条波形装得下" if s.get("fits_one_pattern") else "超预算 → 分块跑"
-        form.addRow("向量预算", QLabel(
-            f"单段最大 {s.get('n_vectors_gate_max')}/{s.get('vector_budget')} · {fits} · 共 {s.get('n_executes')} 段"))
+            form.addRow("Pulse interval  Toff", QLabel(_fmt_s(s.get("interval_s"))))
+        form.addRow("Total duration (all segments)", QLabel(_fmt_s(s.get("total_shot_duration_s"))))
+        fits = "fits one pattern" if s.get("fits_one_pattern") else "over budget -> chunked"
+        form.addRow("Vector budget", QLabel(
+            f"max {s.get('n_vectors_gate_max')}/{s.get('vector_budget')} per segment · {fits} · {s.get('n_executes')} segments"))
         lay.addWidget(box)
 
         self._build_plot(preview, lay)
 
-        btn = QPushButton("关闭")
+        btn = QPushButton("Close")
         btn.clicked.connect(self.accept)
         row = QHBoxLayout()
         row.addStretch(1)
@@ -85,7 +85,6 @@ class TimingPreviewDialog(QDialog):
 
     @staticmethod
     def _title_of(stage: str) -> str:
-        """把协议码换成形象名给人看(协议码留后台)。"""
         try:
             from fefetlab.engine import REGISTRY
             sp = REGISTRY.get(stage)
@@ -99,24 +98,23 @@ class TimingPreviewDialog(QDialog):
         try:
             import pyqtgraph as pg
         except Exception as exc:  # noqa: BLE001
-            lay.addWidget(QLabel(f"(波形图不可用:{exc})"))
+            lay.addWidget(QLabel(f"(plot unavailable: {exc})"))
             return
 
         pw = pg.PlotWidget()
         self._pw = pw
-        pw.setBackground("w")                                   # 白底,别黑
+        pw.setBackground("w")
         for name in ("left", "bottom"):
             ax = pw.getAxis(name)
             ax.setPen("#555")
             ax.setTextPen("#555")
-        pw.setLabel("left", "栅电压", units="V")                # units= 让 pg 自动加 V/mV,不出难看的 ×0.001
-        pw.setLabel("bottom", "时间", units="s")                # 自动 s/ms/µs,按数据量级走
+        pw.setLabel("left", "Gate", units="V")
+        pw.setLabel("bottom", "Time", units="s")
         pw.showGrid(x=True, y=True, alpha=0.3)
-        # 默认 PanMode:拖动 = 平移;滚轮 = 缩放;右键拖 = 框选放大
 
         ctl = QHBoxLayout()
-        cb_logx = QCheckBox("X 对数轴(延迟跨度大时好用)")
-        btn_reset = QPushButton("重置视图")
+        cb_logx = QCheckBox("X log axis (good for wide delay spans)")
+        btn_reset = QPushButton("Reset view")
         btn_reset.clicked.connect(pw.autoRange)
         ctl.addWidget(cb_logx)
         ctl.addStretch(1)
@@ -124,30 +122,47 @@ class TimingPreviewDialog(QDialog):
         lay.addLayout(ctl)
         lay.addWidget(pw, 1)
 
+        xitems = []   # (item, data_x) so labels/lines can move when X goes log
+
         pts = preview.get("gate_points", [])
+        xs = [p[0] for p in pts]
         if pts:
-            xs = [p[0] for p in pts]
             pw.plot(xs, [p[1] for p in pts], pen=pg.mkPen("#1565C0", width=2))
-        read_lines = []
-        for te in preview.get("read_events_s", []):
+
+        def _label(t, v, text, color, anchor):
+            ti = pg.TextItem(text, color=color, anchor=anchor)
+            ti.setPos(t, v)
+            pw.addItem(ti)
+            xitems.append((ti, t))
+
+        for p in preview.get("pulses", []):                 # write / disturb pulses
+            _label(p["t"], p["v"], f"{p['v']:g} V\n{_fmt_s(p['width'])}", "#0C447C", (0.5, 1.1))
+        for r in preview.get("reads", []):                  # read plateaus
+            _label(r["t"], r["v"], f"READ {r['v']:g} V", "#993C1D", (0.5, -0.1))
+        for te in preview.get("read_events_s", []):         # vertical marker at every read
             ln = pg.InfiniteLine(pos=te, angle=90,
-                                 pen=pg.mkPen("#D84315", width=1.5, style=Qt.PenStyle.DashLine))
+                                 pen=pg.mkPen("#D84315", width=1.2, style=Qt.PenStyle.DashLine))
             pw.addItem(ln)
-            read_lines.append((ln, te))
+            xitems.append((ln, te))
 
         def _set_logx(checked):
             pw.setLogMode(x=checked)
-            for ln, t in read_lines:                           # log 模式下 InfiniteLine 要换成 log10 坐标
-                ln.setValue(math.log10(t) if (checked and t > 0) else t)
+            for it, t in xitems:
+                x = math.log10(t) if (checked and t > 0) else t
+                if isinstance(it, pg.InfiniteLine):
+                    it.setValue(x)
+                else:
+                    it.setPos(x, it.pos().y())
             pw.autoRange()
 
         cb_logx.toggled.connect(_set_logx)
-        pos = [x for x in (xs if pts else []) if x > 0]
-        if pos and max(pos) / min(pos) > 100:                  # 时间跨多个数量级 → 默认对数轴,右侧读点才看得见
+        pos = [x for x in xs if x > 0]
+        if pos and max(pos) / min(pos) > 100:               # spans decades -> default log so reads spread out
             cb_logx.setChecked(True)
 
-        note = QLabel("蓝线 = 栅电压波形(升/降沿 T_RF 是斜边,放大可见);橙虚线 = 读窗位置。"
-                      "拖动平移 · 滚轮缩放 · 右键拖框选放大 · 「重置视图」复原;读点挤在一侧时勾「X 对数轴」。")
+        note = QLabel("Blue = gate-voltage waveform (T_RF rise/fall = sloped edges, zoom to see). "
+                      "Blue labels = pulse V / width; red labels + dashed lines = read points. "
+                      "Drag to pan · wheel to zoom · right-drag to box-zoom · Reset view to fit.")
         note.setStyleSheet("color:#888;")
         note.setWordWrap(True)
         lay.addWidget(note)
